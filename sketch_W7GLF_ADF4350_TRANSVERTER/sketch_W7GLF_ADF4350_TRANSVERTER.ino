@@ -3,7 +3,8 @@
 //   update march 7, 2016 (ROBOT V1.1 and V1.0)
 //
 //  Lots of changes by Ray Cannon W7GLF
-//   pdate July 17, 2018 (Remove INTDIV - it did not work)
+//   Update July 17, 2018 (Remove INTDIV - it does not work)
+//
 //
 
 #define ADF4351 false   // Are we ADF4350 or ADF4351 ?
