@@ -3,13 +3,8 @@
 //   update march 7, 2016 (ROBOT V1.1 and V1.0)
 //
 //  Lots of changes by Ray Cannon W7GLF
+//   pdate July 17, 2018 (Remove INTDIV - it did not work)
 //
-//  INTDIV below was used to test the use of INT n division rather than FRAC n division.  
-//  It would be interesting to compare the phase noise using each method.  I have determined INT n 
-//  division does not work for all choices (for example 432.01) because N register is only 16 bits.
-//  When that happens I fall back to FRACT mode and display LOCKED.  
-//
-#define INTDIV  false
 
 #define ADF4351 false   // Are we ADF4350 or ADF4351 ?
 
@@ -92,7 +87,6 @@ unsigned int long reg0, reg1;
 unsigned long nreg, rreg, oldgcd;
 unsigned long freqin, pdfreqin;
 
-
 void WriteRegister32(const uint32_t value)   //program a 32 bit register
 {
   digitalWrite(ADF435x_LE, LOW);
@@ -119,28 +113,6 @@ void SetADF435x()  // Program all the registers of the ADF435x
     Serial.flush ();
 #endif       
 }
-
-
-#if INTDIV
-// Calculate Greatest Common Divisor of desired freq and ref which gives us the
-// highest Phase Detection Frequency we can use for integer divisor.
-// Credit for algorithm goes to Euclid.
-long GCD(unsigned long freq, unsigned long ref )
-{
-  while (freq != ref)
-  {
-    if (freq > ref)
-    {
-      freq -= ref;
-    }
-    else
-    {
-      ref -= freq;
-    }
-  }
-  return freq;
-}
-#endif
 
 void CalculateDivider ()
 {
@@ -207,72 +179,23 @@ void FrequencyOrLevelHasChanged()
       registers [4] |= ((level & 3) << 3);
     } 
     
-#if INTDIV
-    // User INTEGER Division
-    // Calculate best integer Phase Detector Frequency
-
-    // Convert frequencies to Hertz
-    freqin = 10000 * RFint * OutputDivider;
-    pdfreqin  = 1000000 * PFDRFout;
-    gcd = GCD(freqin, pdfreqin );
-    nreg = freqin / gcd;
-    rreg = pdfreqin / gcd;
-
-  #if DEBUG    
-    if (gcd != oldgcd) 
-    {
-      Serial.print ("GCD of ");
-      Serial.print (freqin);
-      Serial.print (" and ");
-      Serial.print (pdfreqin);
-      Serial.print (" is ");
-      Serial.print (gcd);
-      Serial.print (", n = ");
-      Serial.print (nreg);
-      Serial.print (", r = ");
-      Serial.print (rreg);
-      Serial.print ("\n");
-    }
-  #endif 
-
-    if (nreg > 65535) 
-    {
-  #if DEBUG
-      Serial.print ("N too large for INT mode so using FRACT mode\n");
-  #endif
-      nreg_overflow = true;
-      // We cannot use INT so go back to FRACT
-      INTA = (RFout * OutputDivider) / PFDRFout;
-      MOD = (PFDRFout / OutputChannelSpacing);
-      if (MOD < 2) MOD = 2;
-      FRACF = (((RFout * OutputDivider) / PFDRFout) - INTA) * MOD;
-      FRAC = round(FRACF); // The result is rounded
-      registers[2] = 0x4E42;
-      #if ADF4351
-      bitClear (registers[3], 21); // Reset for Fractional Division
-      bitClear (registers[3], 22); // Reset for Fractional Division
-      #endif
-    }
-    else
-    {
-      // No Overflow - we can do INT Division
-      nreg_overflow = false;
-      INTA = nreg;
-      MOD = 2;
-      FRAC = 0; // The result is rounded
-      registers[2] = (( rreg & 0x3ff ) << 14) | 0xF42;  // (0x100) set means use INT Division
-      #if ADF4351
-      bitSet (registers[3], 21); // Set for INT Division
-      bitSet (registers[3], 22); // Set for INT Division
-      #endif
-    } 
-#else //  INTDIV false always use FRACT DIVISION
     INTA = (RFout * OutputDivider) / PFDRFout;
     MOD = (PFDRFout / OutputChannelSpacing);
     if (MOD < 2) MOD = 2;
     FRACF = (((RFout * OutputDivider) / PFDRFout) - INTA) * MOD;
     FRAC = round(FRACF); // The result is rounded
-#endif // #if INTDIV
+
+#if DEBUG    
+      Serial.print ("INT = ");
+      Serial.print (INTA);
+      Serial.print ("\nR = 1");
+      Serial.print ("\nPDF = 10 MHz");
+      Serial.print ("\nFRAC = ");
+      Serial.print (FRAC);
+      Serial.print ("\nMOD = ");
+      Serial.print (MOD);
+      Serial.print ("\n");
+#endif 
 
     registers[0] = 0;
     registers[0] = INTA << 15; // OK
