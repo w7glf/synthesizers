@@ -92,9 +92,8 @@ void WriteRegister32(const uint32_t value)   //program a 32 bit register
 {
   digitalWrite(ADF435x_LE, LOW);
   for (int i = 3; i >= 0; i--)          // loop on 4 x 8 bits
-  SPI.transfer((value >> 8 * i) & 0xFF); // offset, byte masking and sending via SPI
+    SPI.transfer((value >> 8 * i) & 0xFF); // offset, byte masking and sending via SPI
   digitalWrite(ADF435x_LE, HIGH);
-  digitalWrite(ADF435x_LE, LOW);
 }
 
 void SetADF435x()  // Program all the registers of the ADF435x
