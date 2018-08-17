@@ -18,43 +18,62 @@
 // Set desired default level (0 to 3)
 #define DEFAULT_LEVEL 0
 
-double frequency_table [16] =
+double frequency_table [32] =
   // I made these double so if on board oscillator is too low these can be
   // tweaked so call frequency is within the ham band.  Otherwise many radios
   // will not allow you to transmit.  This means that using integer division is
   // likely not possible.  If you lock to GPS then these numbers will end up 
   // being integers and you can use integer divison to improve phase noise.
+
           {
+            // The first value is the default value when Arduino has no jumpers. 
             1135.95,  // 0  - 1136*9 => 10224 + 144 => 10368
-            1104.00,  // 1  - 1104*9 => 9936 + 432 => 10368
-             875.00,  // 2  - 875 + 28 => 903
-            1152.00,  // 3  - 1152 + 28 => 1296 
-            2160.00,  // 4  - 2160 + 144 => 2304
-            1872.00,  // 5  - 1872 + 432 => 2304
-            3312.00,  // 6  - 3312 + 144 => 3456 
-            3024.00,  // 7  - 3024 + 432 => 3456
-            1872.00,  // 8  - 1872*3 => 5616 + 144 => 5760
-            1776.00,  // 9  - 1776*3 => 5328 + 432 => 5760
-               0.00,  // 10 - 
+
+            1136.00,  // 1  - 1136*9 => 10224 + 144 => 10368
+            1104.00,  // 2  - 1104*9 => 9936 + 432 => 10368
+             875.00,  // 3  - 875 + 28 => 903
+            1152.00,  // 4  - 1152 + 28 => 1296 
+            2160.00,  // 5  - 2160 + 144 => 2304
+            1872.00,  // 6  - 1872 + 432 => 2304
+            3312.00,  // 7  - 3312 + 144 => 3456 
+            3024.00,  // 8  - 3024 + 432 => 3456
+            1872.00,  // 9  - 1872*3 => 5616 + 144 => 5760
+            1776.00,  // 10 - 1776*3 => 5328 + 432 => 5760
                0.00,  // 11 - 
                0.00,  // 12 - 
                0.00,  // 13 - 
                0.00,  // 14 - 
-            1152.00   // 15 - For testing - good harmonics to 10 GHz at 2304, 3456, 5760, 10368
+               0.00,  // 15 - 
+               0.00,  // 16 - 
+               0.00,  // 17 - 
+               0.00,  // 18 - 
+               0.00,  // 19 - 
+               0.00,  // 20 - 
+               0.00,  // 21 - 
+               0.00,  // 22 - 
+               0.00,  // 23 - 
+               0.00,  // 24 - 
+               0.00,  // 25 - 
+               0.00,  // 26 - 
+               0.00,  // 27 - 
+               0.00,  // 28 - 
+               0.00,  // 29 - 
+               0.00,  // 30 - 
+            1152.00   // 31 - For testing - good harmonics at 2304, 3456, 5760, 10368
           };
 //
 //  This sketch uses and Arduino Nano ($2) and an ADF435x chinese
 //  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.
-//  Sixteen frequencies can be selected using pins D7 (most significant bit) through D4 (least significant bit).
+//  Thirty two frequencies can be selected using pins D8 (most significant bit) through D4 (least significant bit).
 //  The bit is considered one if the pin is low and zero if the pin is high.  This means if nothing is connected
 //  the Aduino will select frequency zero. This is because of the pullups.
-//  To select frequency 3 D7 high, D6 high, D5 low, D4 low.
-//  Pin D8 when LOW tells Arduino to loop rather than halt.
+//  To select frequency 3 D8 high, D7 high, D6 high, D5 low, D4 low.
+//  Pin D9 when LOW tells Arduino to loop rather than halt.  This way it can change frequencies on the fly.
 //
 //  ******************************************** HARDWARE IMPORTANT********************************************************
 //  With an Arduino UNO (NANO) : uses a resistive divider to reduce the voltage, MOSI (pin 11) to
 //  ADF DATA, SCK (pin13) to ADF CLK, Select (PIN 3) to ADF LE
-//  Resistive divider 1000 Ohm with 1300 Ohm to ground on Arduino pins D11, D13 and D3 to adapt from 5V
+//  Resistive divider 1000 Ohm with 1800 Ohm to ground on Arduino pins D11, D13 and D3 to adapt from 5V
 //  to 3.3V the digital signals DATA, CLK and LE send by the Arduino.
 //  Arduino pin D2 (for lock detection) directly connected to ADF435x card MUXOUT.
 //  The ADF card is 5V powered by the ARDUINO (PINs Vin and GND).
@@ -233,11 +252,13 @@ void setup() {
   pinMode(6, INPUT);          // Setup pins
   pinMode(7, INPUT);          // Setup pins
   pinMode(8, INPUT);          // Setup pins
+  pinMode(9, INPUT);          // Setup pins
   digitalWrite(4, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(5, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(6, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(7, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(8, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
+  digitalWrite(9, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
 
   // Default ref
   PFDRFout=DEFAULT_REF_FREQ;
@@ -257,17 +278,18 @@ void loop()
 {
   byte freq_select;
 
-  // Read D7 through D4 to find RF Frequency
+  // Read D8 through D4 to find RF Frequency
 
   freq_select = 0;
 
   // Invert sense of input pins.  We do this because we want our default value
-  // (when pins 7 through 4 are not connected and are thus pulled high) to use register 0.
+  // (when pins 8 through 4 are not connected and are thus pulled high) to use register 0.
   // There is no choice to have the pins pulled low when there is no connection.
   // When using external switches to set which frequency to use mount the switches so they
   // are closed when the paddle is down.  This way the binary pattern of the switches will
   // directly indicate which choice is being made.
    
+  freq_select |= (digitalRead (8) == 0) << 4;
   freq_select |= (digitalRead (7) == 0) << 3;
   freq_select |= (digitalRead (6) == 0) << 2;
   freq_select |= (digitalRead (5) == 0) << 1;
@@ -289,13 +311,13 @@ void loop()
    
   delay (10);
 
-  if (digitalRead (8) == HIGH)
+  if (digitalRead (9) == HIGH)
   {
      // When we have programmed the synth HALT the processor to reduce 
      // switching transients and power draw.  This means that if the frequency
      // is changed on the fly the Arduino Nano will need to be reset to pick up
      // the new value.  This makes sense if using as a fixed LO.  If you wish to
-     // be able to shange the frequency on the fly remove the next three lines.
+     // be able to change the frequency on the fly remove the next three lines.
      cli();
      sleep_enable();
      sleep_cpu();
