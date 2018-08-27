@@ -4,8 +4,26 @@
 //
 //  Lots of changes by Ray Cannon W7GLF
 //   Update July 17, 2018 (Remove INTDIV - it does not work)
+//   Update Aug 26, 2018 (Allow users to redefine DAT and CLK pins basically get rid of SPI_LIB)
 //
+
+// Warning pins D2 through D9 are reserved for the following use
 //
+// D2 - input pin for Lock
+// D4 - input frequency table index bit (2^0) - ones digit complement
+// D5 - input frequency table index bit (2^1) - twos digit complement
+// D6 - input frequency table index bit (2^2) - fours digit complement
+// D7 - input frequency table index bit (2^3) - eights digit complement
+// D8 - input frequency table index bit (2^4) - sixteens digit complement
+// D9 - input - HIGH (default) means halt processor after programming ADF4350
+
+#define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
+#define ADF435x_CLK 13 // Pin for CLK on ADF435x
+#define ADF435x_DAT 11 // Pin for DAT on ADF435x
+
+// #define ADF435x_LE 10 // Pin for Latch Enable on ADF435x
+// #define ADF435x_CLK 11 // Pin for CLK on ADF435x
+// #define ADF435x_DAT 12 // Pin for DAT Enable on ADF435x
 
 #define ADF4351 false   // Are we ADF4350 or ADF4351 ?
 
@@ -44,11 +62,10 @@ double frequency_table [32] =
                0.00,  // 13 - 
                0.00,  // 14 - 
                0.00,  // 15 - 
-               0.00,  // 16 - 
+               144.2, // 16 - For testing 
                0.00,  // 17 - 
                0.00,  // 18 - 
                0.00,  // 19 - 
-               0.00,  // 20 - 
                0.00,  // 21 - 
                0.00,  // 22 - 
                0.00,  // 23 - 
@@ -63,7 +80,8 @@ double frequency_table [32] =
           };
 //
 //  This sketch uses and Arduino Nano ($2) and an ADF435x chinese
-//  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.
+//  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.             0.00,  // 20 - 
+ 
 //  Thirty two frequencies can be selected using pins D8 (most significant bit) through D4 (least significant bit).
 //  The bit is considered one if the pin is low and zero if the pin is high.  This means if nothing is connected
 //  the Aduino will select frequency zero. This is because of the pullups.
@@ -80,8 +98,6 @@ double frequency_table [32] =
 
 #include <SPI.h>
 #include <avr/sleep.h>
-
-#define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
 
 bool locked, nreg_overflow=false;
 
@@ -110,8 +126,12 @@ unsigned long freqin, pdfreqin;
 void WriteRegister32(const uint32_t value)   //program a 32 bit register
 {
   digitalWrite(ADF435x_LE, LOW);
-  for (int i = 3; i >= 0; i--)          // loop on 4 x 8 bits
-    SPI.transfer((value >> 8 * i) & 0xFF); // offset, byte masking and sending via SPI
+  for (int i = 31; i >= 0; i--)          // loop on 32 bits MSB to LSB
+  {
+    digitalWrite (ADF435x_DAT, (value >> i) & 1);
+    digitalWrite (ADF435x_CLK, HIGH);
+    digitalWrite (ADF435x_CLK, LOW);  
+  }
   digitalWrite(ADF435x_LE, HIGH);
 }
 
@@ -239,13 +259,14 @@ void setup() {
 
   Serial.begin (9600); //  Serial to the PC via Arduino "Serial Monitor"  at 9600
 
-  pinMode(2, INPUT);  // PIN 2 in entry for lock
+  pinMode(2, INPUT);  // PIN 2 input entry for lock
   pinMode(ADF435x_LE, OUTPUT);          // Setup pins
   digitalWrite(ADF435x_LE, HIGH);
   
-  SPI.begin();                          // Init SPI bus
-  SPI.setDataMode(SPI_MODE0);           // CPHA = 0 and positive Clock
-  SPI.setBitOrder(MSBFIRST);            // Big Endian
+  pinMode(ADF435x_CLK, OUTPUT);          // Setup pins
+  pinMode(ADF435x_DAT, OUTPUT);          // Setup pins
+  digitalWrite (ADF435x_CLK, LOW);  
+  digitalWrite (ADF435x_DAT, LOW);  
 
   pinMode(4, INPUT);          // Setup pins
   pinMode(5, INPUT);          // Setup pins
