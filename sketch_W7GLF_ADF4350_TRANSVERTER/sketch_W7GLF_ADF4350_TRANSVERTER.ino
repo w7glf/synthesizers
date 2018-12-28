@@ -45,7 +45,7 @@ double frequency_table [32] =
 
           {
             // The first value is the default value when Arduino has no jumpers. 
-            1135.95,  // 0  - 1136*9 => 10224 + 144 => 10368
+            1136.00,  // 0  - 1136*9 => 10224 + 144 => 10368
  
              874.00,  // 1  -  874 +  28 => 902 
              858.00,  // 2  -  758 + 144 => 902 
