@@ -17,18 +17,18 @@
 // D8 - input frequency table index bit (2^4) - sixteens digit complement
 // D9 - input - HIGH (default) means halt processor after programming ADF4350
 
-#define ADF435x_LE 3   // Pin for Latch Enable on ADF435x
+#define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
 #define ADF435x_CLK 13 // Pin for CLK on ADF435x
 #define ADF435x_DAT 11 // Pin for DAT on ADF435x
 
-// #define ADF435x_LE 10  // Pin for Latch Enable on ADF435x
+// #define ADF435x_LE 10 // Pin for Latch Enable on ADF435x
 // #define ADF435x_CLK 11 // Pin for CLK on ADF435x
 // #define ADF435x_DAT 12 // Pin for DAT Enable on ADF435x
 
 #define ADF4351 false   // Are we ADF4350 or ADF4351 ?
 
 //  DEBUG enables the serial print
-#define DEBUG false
+#define DEBUG true
 
 // Set desired default REF_FREQ to 10 MHz or 25 MHz
 #define DEFAULT_REF_FREQ 10
@@ -46,23 +46,23 @@ double frequency_table [32] =
           {
             // The first value is the default value when Arduino has no jumpers. 
             1136.00,  // 0  - 1136*9 => 10224 + 144 => 10368
- 
-             874.00,  // 1  -  874 +  28 => 902 
-             858.00,  // 2  -  758 + 144 => 902 
-            1268.00,  // 3  - 1268 +  28 => 1296 
-            1152.00,  // 4  - 1152 + 144 => 1296 
+
+            1136.00,  // 1  - 1136*9 => 10224 + 144 => 10368
+            1104.00,  // 2  - 1104*9 => 9936 + 432 => 10368
+             875.00,  // 3  - 875 + 28 => 903
+            1152.00,  // 4  - 1152 + 28 => 1296 
             2160.00,  // 5  - 2160 + 144 => 2304
             1872.00,  // 6  - 1872 + 432 => 2304
             3312.00,  // 7  - 3312 + 144 => 3456 
             3024.00,  // 8  - 3024 + 432 => 3456
             1872.00,  // 9  - 1872*3 => 5616 + 144 => 5760
             1776.00,  // 10 - 1776*3 => 5328 + 432 => 5760
-            1136.00,  // 11 - 1136*9 => 10224 + 144 => 10368
-            1104.00,  // 12 - 1104*9 =>  9936 + 432 => 10368
+               0.00,  // 11 - 
+               0.00,  // 12 - 
                0.00,  // 13 - 
                0.00,  // 14 - 
                0.00,  // 15 - 
-             144.20,  // 16 - For testing 
+               144.2, // 16 - For testing 
                0.00,  // 17 - 
                0.00,  // 18 - 
                0.00,  // 19 - 

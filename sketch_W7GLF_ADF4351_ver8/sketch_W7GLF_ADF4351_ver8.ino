@@ -65,8 +65,15 @@
 // are assigned as digital inputs with pull up resistors. 
 //*********************************************************************************************************************
 
+#define version "   version 8    "
 
-#define ANALOG_BUTTONS false
+// Only one of the three following conditions should be set to true
+
+#define ANALOG_BUTTONS true  // true for DF Robot button shield
+#define DIGITAL_BUTTONS false  // true for individual buttons tied to digital inputs - KD7TS uses this
+#define MATRIXED_BUTTONS false  // true for 4x4 matrix keypad
+
+#define ADF4351 true   // Are we ADF4350 or ADF4351 ?
 
 //  DEBUG enables the serial print
 #define DEBUG false
@@ -98,7 +105,6 @@ byte poscursor = 0; //position cursor between 0 and 15
 byte line = 0; // LCD line 0 or 1
 byte memory_number, RWtemp; // memory number for EEPROM
 bool locked, nreg_overflow = false;
-int pushed;
 
 uint32_t registers[6] =  {0x4580A8, 0x80080C9, 0x4E42, 0x4B3, 0xBC803C, 0x580005} ; // 437 MHz with ref 25 MHz
 
@@ -111,90 +117,282 @@ unsigned long gcd;  // Only used for INT division to hold loop filter frequency
 
 
 double RFout, REFin, INT, PFDRFout, OutputChannelSpacing, FRACF;
-double RFoutMin = 35, RFoutMax = 4400, REFinMax = 250, PDFMax = 32;
+double RFoutMax = 4400, REFinMax = 250, PDFMax = 32;
 unsigned int long RFint, RFintold, INTA, RFcalc, PDRFout, MOD, FRAC;
 byte OutputDivider, lock = 2;
 unsigned int long reg0, reg1;
 
-#define btnRIGHT  0
-#define btnUP     1
-#define btnDOWN   2
-#define btnLEFT   3
-#define btnSELECT 4
-#define btnNONE   5
+#if ADF4351
+double RFoutMin = 35;
+#else
+double RFoutMin = 137.5;
+#endif
+
+
+// Values for analog ADC - there may have to be adjusted - use DEBUG_BUTTONS to see 
+
+#define ADC_RIGHT 50 
+#define ADC_UP 195 
+#define ADC_DOWN 380
+#define ADC_LEFT 555
+#define ADC_SELECT 790
+#define ADC_ANY ADC_SELECT
+
+// The following definitions are for 4x4 MATRIXED KEYPAD 
+#define btnM0     0
+#define btnM1     1
+#define btnM2     2
+#define btnM3     3
+#define btnM4     4
+#define btnM5     5
+#define btnM6     6
+#define btnM7     7
+#define btnM8     8
+#define btnM9     9
+#define btnM10    10
+
+
+// Values for analog buttons, digital buttons or 4x4 MATRIXED KEYBOARD
+#define btnRIGHT  11
+#define btnUP     12
+#define btnDOWN   13
+#define btnLEFT   14
+#define btnSELECT 15
+#define btnNONE   99
+
+// Digital pin connections for 4x4 keypad - define digital pins tied to 4x4 matrix.
+// Note this matrix depends on DUE which has many more digital pins than UNO or NANO.
+// These pin numbers will have to be reassigned for the NANO or UNO if a 4x4 keyboard is desired.
+unsigned int row [4] = {31,33,35,37};  /* Row1 D31, Row2 D33, Row3 D35, Row4 D37 */
+unsigned int col [4] = {39,41,43,45};  /* Column1 D39, Column2 D41, Column3 D43, Column4 D45 */
+
+// Map for 4x4 keypad - like phone keypad on its side
+// *************************
+// *  1  *  4  *  7  *  *  *  
+// *************************
+// *  2  *  5  *  8  *  0  *  
+// *************************
+// *  3  *  6  *  9  *  #  *  
+// *************************
+// *  A  *  B  *  C  *  D  *  
+// *************************
+
+// Map for 4x4 keypad - like phone keypad on its side
+
+unsigned int matrix [4][4] = { {1, 4, 7, 10},
+                               {2, 5, 8, 0},
+                               {3, 6, 9, 11},
+                               {12, 13, 14, 15} };
+
 
 //**************************** SP READING BUTTONS ********************************************
 int read_buttons()
 {
 
-  //****************************  READING BUTTONS ********************************************
-
 #if ANALOG_BUTTONS
   adc_key_in = analogRead(0);      // read the value from the buttons
+  if (adc_key_in < ADC_ANY)
+  {
+    timer = 1;
+    lcd.blink();  
 
-#if DEBUG || DEBUG_SETTLE
-  #if DEBUG_SETTLE // Test button settling time
-    int adc_val_sav = adc_key_in;
-    for (int i = 0; i < 50; i++)
-    {
-      Serial.print ("Read #");
-      Serial.print (i);
-  #endif
+    #if DEBUG_BUTTONS || DEBUG_SETTLE
+
+      #if DEBUG_SETTLE // Test button settling time
+        int adc_val_sav = adc_key_in;
+        for (int i=0; i < 50; i++)
+        {
+          Serial.print ("Read #");
+          Serial.print (i);
+      #endif
       Serial.print (" Button value = ");
-      Serial.print ( (5.0 / 1024) * adc_key_in);
+      Serial.print ( (3.3 / 1024) * adc_key_in);
       Serial.print (", adc_key_in = ");
       Serial.print (adc_key_in);
       Serial.print ("\n");
-#if DEBUG_SETTLE
-      adc_key_in = 0;
-      if (adc_key_in < adc_val_sav) adc_val_sav = adc_key_in;
+      #if DEBUG_SETTLE
+          adc_key_in = analogRead(0);
+          if (adc_key_in < adc_val_sav) adc_val_sav = adc_key_in;
+        }
+    adc_key_in = adc_val_sav;
+    Serial.print ("-----------------------\n");
+  #endif
+    Serial.flush();
+ #endif
   }
-  adc_key_in = adc_val_sav;
-  Serial.print ("-----------------------\n");
-#endif
-  Serial.flush();
-#endif
+  
+  if (adc_key_in < ADC_RIGHT) return btnRIGHT;  // for ROBOT V1.0 Display on Arduino Due 
+  if (adc_key_in < ADC_UP) return btnUP;
+  if (adc_key_in < ADC_DOWN) return btnDOWN;
+  if (adc_key_in < ADC_LEFT) return btnLEFT;
+  if (adc_key_in < ADC_SELECT) return btnSELECT; // End ROBOT 1.1 Display on Arduino Due
 
-  if (adc_key_in < 790) {
-    lcd.blink();
-    timer = 1;
+#elif MATRIXED_BUTTONS
 
-    pushed = HIGH;
-    if (adc_key_in < 50)return btnRIGHT;  // for ROBOT display V1.0
-    if (adc_key_in < 195)return btnUP;
-    if (adc_key_in < 380)return btnDOWN;
-    if (adc_key_in < 555)return btnLEFT;
-    if (adc_key_in < 790)return btnSELECT; // end display ROBOT1.1
-  }
-#else
+  //** Scan Keyboard
+    int digital_value = -1;
+
+    for (int r=0; r<4; r++)
+    {
+      digitalWrite(row[r], LOW);
+      for (int c=0; c<4; c++)
+      {
+        if (digitalRead (col[c]) == LOW)
+        {
+          // map row and col to value
+          digitalWrite(row[r], HIGH);
+          digital_value = matrix [r][c];
+          lcd.blink();  
+          timer = 1;
+          break;
+        }
+      }
+      digitalWrite(row[r], HIGH);
+    }
+    if (digital_value == 2) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnRIGHT");
+        Serial.print ("\n");
+      #endif
+      return btnRIGHT;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 3) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnUP");
+        Serial.print ("\n");
+      #endif
+      return btnUP;
+    }
+    if (digital_value == 12){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnDOWN");
+        Serial.print ("\n");
+      #endif
+      return btnDOWN;
+    }
+    if (digital_value == 1) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnLEFT");
+        Serial.print ("\n");
+      #endif
+      return btnLEFT;
+    }
+    if (digital_value == 4) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnSELECT");
+        Serial.print ("\n");
+      #endif
+      return btnSELECT; // End ROBOT 1.1 Display on Arduino Due
+    }
+    // Here are quick memory buttons
+    if (digital_value == 5) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM0");
+        Serial.print ("\n");
+      #endif
+      return btnM0;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 6) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM1");
+        Serial.print ("\n");
+      #endif
+      return btnM1;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 13) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM2");
+        Serial.print ("\n");
+      #endif
+      return btnM2;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 7){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM3");
+        Serial.print ("\n");
+      #endif
+      return btnM3;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 8){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM4");
+        Serial.print ("\n");
+      #endif
+      return btnM4;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 9) { 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM5");
+        Serial.print ("\n");
+      #endif
+      return btnM5;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 14){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM6");
+        Serial.print ("\n");
+      #endif
+      return btnM6;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 10){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM7");
+        Serial.print ("\n");
+      #endif
+      return btnM7;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 0){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM8");
+        Serial.print ("\n");
+      #endif
+      return btnM8;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 11){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM9");
+        Serial.print ("\n");
+      #endif
+      return btnM9;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+    if (digital_value == 15){ 
+      #if DEBUG_BUTTONS
+        Serial.print ("btnM10");
+        Serial.print ("\n");
+      #endif
+      return btnM10;  // for ROBOT V1.0 Display on Arduino Due 
+    }
+
+#elif DIGITAL_BUTTONS // KD7TS
+
   if  (digitalRead(A0) == LOW )
-  { lcd.blink(); timer = 1; Serial.print ("RT"); Serial.print ("\n");
-    pushed = HIGH; return btnRIGHT;
+  { lcd.blink(); timer = 1; Serial.print ("RT\n");
+    return btnRIGHT;
   };
 
   if  (digitalRead(A1) == LOW)
-  { lcd.blink(); timer = 1; Serial.print ("UP"); Serial.print ("\n");
-    pushed = HIGH; return btnUP;
+  { lcd.blink(); timer = 1; Serial.print ("UP\n");
+    return btnUP;
   };
 
   if  (digitalRead(A2) == LOW)
-  { lcd.blink(); timer = 1; Serial.print ("DN"); Serial.print ("\n");
-    pushed = HIGH; return btnDOWN;
+  { lcd.blink(); timer = 1; Serial.print ("DN\n");
+    return btnDOWN;
   };
 
   if  (digitalRead(A3) == LOW)
-  { lcd.blink(); timer = 1; Serial.print ("LT"); Serial.print ("\n");
-    pushed = HIGH; return btnLEFT;
+  { lcd.blink(); timer = 1; Serial.print ("LT\n");
+    return btnLEFT;
   };
 
   if  (digitalRead(A4) == LOW)
-  { lcd.blink(); timer = 1; Serial.print ("SE"); Serial.print ("\n");
-    pushed = HIGH; return btnSELECT;
+  { lcd.blink(); timer = 1; Serial.print ("SE\n");
+    return btnSELECT;
   };
+
 #endif
 
-  pushed = LOW;
-  return btnNONE;                                                 //  unpressed key
+  return btnNONE;  // no button pushed
 }
 
 //***************************** SP display frequency on LCD ********************************
@@ -322,6 +520,7 @@ void CalculateDivider ()
       bitWrite (registers[4], 21, 0);
       bitWrite (registers[4], 20, 0);
     }
+#if ADF4351
     if (RFout < 137.5) 
     {
       OutputDivider = 32;
@@ -336,6 +535,7 @@ void CalculateDivider ()
       bitWrite (registers[4], 21, 1);
       bitWrite (registers[4], 20, 0);
     }     
+#endif
 }
 
 void FrequencyOrLevelHasChanged()
@@ -383,9 +583,9 @@ void setup() {
   lcd.print("    ADF4351     ");
   delay(1000);
   lcd.setCursor(0, 0);
-  lcd.print("    by F1CJN    ");
+  lcd.print(" by F1CJN/W7GLF ");
   lcd.setCursor(0, 1); // <=======================
-  lcd.print(" 01/29/18 23:03 "); // <=======16 characters=============
+  lcd.print(version); // <=======16 characters=============
   delay(3000);
   poscursor = 7; line = 0;
 
@@ -664,7 +864,7 @@ void loop()
           printAll();
           break;  // exit do while loop
         }; // measure
-      } while (pushed == HIGH);
+      } while (lcd_key != btnNONE); // release hold
       timer2 = 0;
       break;  // End Select button
 
@@ -678,13 +878,11 @@ void loop()
 
    //**************************************************guessing this is to make cursor quit blinking**************
 
-   while (pushed == HIGH) //loop until pushed is false which means no button was pressed
-   // "pushed" is set when a button is pushed so you never come here with a value of low
-   // rather if pushed is low it goes to one of the other cases 
-   {
-      delay(1);
-      read_buttons();
-   } 
+   while (lcd_key != btnNONE) // Wait until buttons are released
+   { 
+     lcd_key = read_buttons(); 
+     delay(1);
+   }
 
    // When we get here no button is pressed
    delay (10);

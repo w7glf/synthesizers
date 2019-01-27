@@ -6,9 +6,10 @@
 //   This code is freeware. No warranty or liability, expressed or implied, is included with this sketch. Commercial use is prohibited. 
 //
 //   update December  5, 2017 W7GLF Modified DFRobot shield so buttons are referenced to 3.3 volts not 5 volts.  It was causing SELECT button
-//                           to not be recognized.  In any case putting 5 volts on a 3.3 volt Arduino is dangerous.  See comment below under HARDWARE...
+//                            to not be recognized.  In any case putting 5 volts on a 3.3 volt Arduino is dangerous.  See comment below under HARDWARE...
 //   update December  6, 2017 W7GLF restructured EEPROM layout to get rid of "magic" numbers like 500 and 501. 
-//                           W7GLF also fixed what looked like a problem and added the ability to set and save the LEVEL. 
+//                            W7GLF also fixed what looked like a problem waiting for button release - 
+//                            and added the ability to set and save the LEVEL. 
 //   update December  6, 2017 W7GLF Added DEBUG_SETTLE options to allow viewing key press outputs.  
 //   update December 22, 2017 W7GLF Added routine UPDATE_ADF5355 to solve problem with synth losing LOCK when UP/DOWN buttons pressed.  
 //   update December 22, 2017 W7GLF Made some changes to get synth to lock up upon inital power up.  
@@ -17,9 +18,7 @@
 //   update February  8, 2018  W7GLF Allow use of matrixed digital keyboard.  
 //   update February 17, 2018  W7GLF - Add alternative calculation of MOD2 as per ADF5355 spec.  
 //   update February 19, 2018  W7GLF - Allow 10 MHZ to use REF double to reduce phase noise.  
-//   update March     3, 2018  W7GLF - Change longs and long longs to uint32_t and uint64_t.  Add the ability to switch between
-//                             F1CJN algorithm and my algorithm for programming registers by using SELECT button when on line 1.
-//                             The current algorithm is shown by last letter: z for my method and Z for F1CJN's method.  
+//   update March     3, 2018  W7GLF - Change longs and long longs to uint32_t and uint64_t.  
 //   update August   21, 2018  W7GLF - Add ability to use analog pins as digital pins for buttons for KD7TS.
 //
 //  This sketch uses an Arduino Due, a standard "LCD buttons shield" from ROBOT, with buttons and an ADF5355 Chinese
@@ -123,11 +122,11 @@
 // be 625.
 
 // correction = ((Measured/Expected) - 1) * 10^9
-long correction = 83;
+long correction = 0;
 
-char version [17] = "v 08/21/18 18:00";
+char version [17] = "v 01/11/19 18:00";
 
-#define DUE true          // Use Due otherwise use Uno or Nano
+#define DUE false          // Use Due otherwise use Uno or Nano
 
 #define USEMULTVCO2 true  // Multiply 10 MHZ external input by 2 to improve phase noise 
 
@@ -138,17 +137,17 @@ char version [17] = "v 08/21/18 18:00";
 // Only one of the three following conditions should be set to true
 
 #define ANALOG_BUTTONS false  // true for DF Robot button shield
-#define DIGITAL_BUTTONS false  // true for individual buttons tied to digital inputs - KD7TS uses this
-#define MATRIXED_BUTTONS true  // true for 4x4 matrix keypad
+#define DIGITAL_BUTTONS true  // true for individual buttons tied to digital inputs - KD7TS uses this
+#define MATRIXED_BUTTONS false  // true for 4x4 matrix keypad
 
 // W7GLF - added some DEBUG variables.
 
-#define DEBUG true
+#define DEBUG false
 
 #define DEBUG_BUTTONS false
 #define DEBUG_SETTLE false
 
-// W7GLF - useful macro for dumping out the hex value of a register
+// W7GLF - useful macros for dumping out the hex value of a register
 #define DebugSerialPrint(token) \
    if (DEBUG) { \
      Serial.print(token); \
@@ -214,8 +213,6 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
   #endif
 #endif
 
-boolean useF1CJNmethod = true;
-
 byte poscursor = 0; //position cursor common 0 to 15
 byte line = 0; // display line in progress on LCD in the course of 0 to 1
 byte X2 = 0;
@@ -267,10 +264,6 @@ uint32_t FVCO[]={0,600000000};// in deciHz (10s of Hz)
 uint32_t FPFD[]={0,26}; // in MHz
 uint32_t FVCOTEMP[]={0,0};// in deciHz (10s of Hz)
 uint32_t FPFDTEMP[]={0,0};
-uint32_t FVCOINHZ[]={0,0}; // Used to calculate MOD2
-uint32_t FPFDINHZ[]={0,0}; // Used to calculate MOD2
-uint32_t FVCOINHZ_TEMP[]={0,0}; // Used to calculate MOD2
-uint32_t FPFDINHZ_TEMP[]={0,0}; // Used to calculate MOD2
   
 uint32_t INT[]={0x0,0x0};
 uint32_t N[]={0x0,0x0};
@@ -417,47 +410,51 @@ void div64(uint32_t num[], uint32_t den[]){
 
 #if DUE
    // Speed up division on DUE.
-   // I am using union because the following did not work:  
-   // uint64_t value1; 
+   uint64_t value, value1, value2; 
+   value1 = num[0] * 0x100000000L + num[1];
+   value2 = den[0] * 0x100000000L + den[1];
+   value = value1 / value2;
+   num[0] = (value >> 32) & 0xFFFFFFFF;
+   num[1] = value & 0xFFFFFFFF;
    // value1 = num [0]; 
    // value1 = value1<<32 + num[1];
    // value1 always ended up as zero... not sure why...
-   union {
-       uint64_t full; 
-       struct {
-          uint32_t low;
-          uint32_t high;
-       }; 
-   } value, value1, value2;
-
-   value1.high = num[0];
-   value1.low = num[1];
-   value2.high = den[0];
-   value2.low = den[1];
-   value.full = value1.full / value2.full;
-   num[0] = value.high;
-   num[1] = value.low;
+//   union {
+//       uint64_t full; 
+//       struct {
+//          uint32_t low;
+//          uint32_t high;
+//       }; 
+//   } value, value1, value2;
+//
+//   value1.high = num[0];
+//   value1.low = num[1];
+//   value2.high = den[0];
+//   value2.low = den[1];
+//   value.full = value1.full / value2.full;
+//   num[0] = value.high;
+//   num[1] = value.low;
 #else
- init64(quot,0,0);
- init64(qbit,0,1);
+   init64(quot,0,0);
+   init64(qbit,0,1);
 
- init64(tmp,0x80000000,0); 
- while(lt64(den,tmp)){ // Shift den until left justified
-   shl64(den);   // den *= 2;
-   shl64(qbit);  // qbit is power of 2 
- }
- 
- while(!eq64(qbit,zero64)){
-   if(lt64(den,num) || eq64(den,num)){
-     sub64(num,den);
-     add64(quot,qbit);
+   init64(tmp,0x80000000,0); 
+   while(lt64(den,tmp)){ // Shift den until left justified
+     shl64(den);   // den *= 2;
+     shl64(qbit);  // qbit is power of 2 
    }
-   shr64(den);
-   shr64(qbit);
- }
+ 
+   while(!eq64(qbit,zero64)){
+     if(lt64(den,num) || eq64(den,num)){
+       sub64(num,den);
+       add64(quot,qbit);
+     }
+     shr64(den);
+     shr64(qbit);
+   }
 
- //remainder now in num, but using it to return quotient for now  
- init64(num,quot[0],quot[1]);
+   //remainder now in num, but using it to return quotient for now  
+   init64(num,quot[0],quot[1]);
 #endif
 }
 
@@ -465,60 +462,24 @@ void div64(uint32_t num[], uint32_t den[]){
 void mul64(uint32_t an[], uint32_t ann[]){
  uint32_t p[2] = {0,0};
  uint32_t y[2] = {ann[0], ann[1]}; 
- #if DUE
-   union {
-       uint64_t full; 
-       struct {
-          uint32_t low;
-          uint32_t high;
-       }; 
-   } value, value1, value2;
- 
-   value1.high = an[0];
-   value1.low = an[1];
-   value2.high = ann[0];
-   value2.low = ann[1];
-   value.full = value1.full * value2.full;
-   an[0] = value.high;
-   an[1] = value.low;
+#if DUE
+     uint64_t value, value1, value2;
+     value1 = an[0] * 0x100000000L + an[1];
+     value2 = ann[0] * 0x100000000L + ann[1];
+     value = value1 * value2;
+     an[0] = (value >> 32) & 0xFFFFFFFF;
+     an[1] = value & 0xFFFFFFFF;
 #else
- while(!eq64(y,zero64)) {
-   if(y[1] & 1)
-     add64(p,an);
-   shl64(an);
-   shr64(y);
- }
- init64(an,p[0],p[1]);
+   while(!eq64(y,zero64)) {
+     if(y[1] & 1)
+       add64(p,an);
+     shl64(an);
+     shr64(y);
+   }
+   init64(an,p[0],p[1]);
 #endif
 }
 
-// Calculate Greatest Common Divisor of desired freq and ref which gives us the
-// highest Phase Detection Frequency we can use for integer divisor.
-// Use Euclidian division method for speed.
-void GCD(uint32_t freq[], uint32_t ref[] )
-{
-   union {
-       uint64_t full; 
-       struct {
-          uint32_t low;
-          uint32_t high;
-       }; 
-   } freqll, refll, temp;
-
-   freqll.high = freq[0];
-   freqll.low = freq[1];
-   refll.high = ref[0];
-   refll.low = ref[1];
-
-   while (refll.full)
-   {
-      temp.full = refll.full;
-      refll.full = freqll.full % refll.full;
-      freqll.full = temp.full;
-   }
-   freq[0] = freqll.high;
-   freq[1] = freqll.low;
-}
 //******************************End of 64 bits routines****************************************
 
 // ****************************Print variable f64****************************************
@@ -528,7 +489,7 @@ uint64_t value;  // long long is 64 bits
 
 #if DEBUG
      Serial.print(title1); 
-     value = an[0] * 4294967296L + an[1];
+     value = an[0] * 0x100000000L + an[1];
   #if DUE
      sprintf(buffer, "%0llu", value);
      Serial.print(buffer);
@@ -869,14 +830,7 @@ void printAll ()
   if (RFcalc<100)lcd.print(digit);
   if (RFcalc<10)lcd.print(digit);
   lcd.print(HERTZ);
-  if (useF1CJNmethod)
-  {
-    lcd.print("Hz");
-  }
-  else
-  {
-    lcd.print("HZ");
-  }
+  lcd.print("Hz");
 
   lcd.setCursor(0,1); // 2nd line
   if (WEE==0) {lcd.print("R=");}
@@ -1209,14 +1163,6 @@ void loop()
 
   if ((RFint != RFintold) || (rflevel != rflevelold) || (modif==1) || (HERTZ != HERTZold) ) {
 #if DEBUG
-    if (useF1CJNmethod)
-    {
-       Serial.println("************ F1CJN method *******************");
-    }
-    else
-    {
-       Serial.println("************ W7GLF method *******************");
-    }
     Serial.print("RFOUT = ");
     RFout_temp = RFOUT;
     RFout_temp = RFout_temp*1000 + HERTZ;
@@ -1245,10 +1191,6 @@ void loop()
     init64(N,0,1E3);
     mul64(FVCO,N);  // FVCO now in Hz
 
-    // Save value for gcd routine
-    FVCOINHZ[0] = FVCO[0];
-    FVCOINHZ[1] = FVCO[1];
- 
     init64(N,0,10);
     mul64(FVCO,N);  // FVCO now in deciHz
 
@@ -1256,10 +1198,6 @@ void loop()
  
     init64(N,0,2);              // X2==1 means 6.8GHZ < RFOUT < 13.6GHz
     if (X2==1){div64(FVCO,N);}; // Divide by 2 for 6.8GHZ < RFOUT < 13.6GHz after FVCO is between 3.4 and 6.8GHz
- 
-    // Calc HZ value in hz for gcd routine
-    init64(HZ,0,RF_Divider*HERTZ); // HZ (in Hz) = HERTZ*10*RF_Divider 
-    add64(FVCOINHZ,HZ);
 
     // multiply by ten so we can do fractional Hz for freq > 6.8
     init64(N,0,10);
@@ -1271,12 +1209,6 @@ void loop()
 
     // At this point range is actual VCO Frequency times 10 
     DebugSerialPrint64 ("FVCO at 3 is ", FVCO, " 1E-1");
-
-    // Save value for gcd routine and W7GLF algorithm
-    FPFDINHZ [0] = FPFD[0];
-    FPFDINHZ [1] = FPFD[1];
-    init64(N,0,1E6);
-    mul64(FPFDINHZ,N);
 
     init64(N,0,1E4);           // Why times 10^4 to handle round off from divide by 25
     mul64(FVCO,N);
@@ -1346,9 +1278,6 @@ void loop()
 
     DebugSerialPrint64 ("FRAC1exact -= FRAC11 at 15 is ", FRAC1exact, " 1E-5");
 
-// F1CJN way - seems to work fine - just use MOD2 value = 1000
-   if (useF1CJNmethod)
-   {
     init64(NX,0,1E5);
     div64(FRAC1exact,NX);
     init64(NX,0,1E2);
@@ -1372,57 +1301,6 @@ void loop()
 
     MOD2[0] = 0;
     MOD2[1] = 1000;
-   } 
-   else
-   {
-       // This is W7GLF new way from 5355 documentation - it seems to work
-       // a tiny bit better when freq > 6.8GHz.   
-
-    init64(NX,0,1E5);
-    div64(FRAC1exact,NX);
-
-    DebugSerialPrint64 ("FRAC1exact at 16 is ", FRAC1exact, " Hz");
-
-    DebugSerialPrint64 ("FVCOINHZ at 17 is ", FVCOINHZ, " Hz");
-    DebugSerialPrint64 ("FPFDINHZ at 17 is ", FPFDINHZ, " Hz");
-
-    FVCOINHZ_TEMP [0] = FVCOINHZ [0]; FVCOINHZ_TEMP [1] = FVCOINHZ [1];
-    FPFDINHZ_TEMP [0] = FPFDINHZ [0]; FPFDINHZ_TEMP [1] = FPFDINHZ [1];
-
-   // Calculate gcd
-    GCD (FPFDINHZ_TEMP,FVCOINHZ_TEMP); // This call rewrites both input params.
-                                       // Desired channel spacing set to final
-                                       // frequency.  Register values agree with
-                                       // AD Evaluation Software.
-    DebugSerialPrint64 ("GCD at 17 is ", FPFDINHZ_TEMP, " Hz");
-
-    MOD2[0] = 0;
-    MOD2[1] = FPFDINHZ_TEMP [1];
-    div64 (FPFDINHZ, MOD2);
-    MOD2[0] = FPFDINHZ[0];
-    MOD2[1] = FPFDINHZ[1];
-   
-    DebugSerialPrint64 ("MOD2 at 17 is ", MOD2, " ");
-
-    if (lt64(MOD2MAX, MOD2))
-    {
-       MOD2[0] = MOD2MAX[0];
-       MOD2[1] = MOD2MAX[1];
-    }
- 
-    mul64(FRAC1exact,MOD2);
-
-    DebugSerialPrint64 ("MOD2 at 18 is ", MOD2, " ");
-    DebugSerialPrint64 ("FRAC1exact * MOD2 at 18 is ", FRAC1exact, " Hz");
-
-    init64(NX,0,1E6);
-    div64(FRAC1exact,NX);
- 
-    FRAC2R=FRAC1exact[1];
-
-    DebugSerialPrint32 ("FRAC2R at 19 is ", FRAC2R, " 1E6");
-
-   }
 
     FPFD[0]=FPFDTEMP[0]; FPFD[1]=FPFDTEMP[1];
     FVCO[0]=FVCOTEMP[0]; FVCO[1]=FVCOTEMP[1];
@@ -1547,15 +1425,17 @@ void loop()
         if (poscursor==15)
         { 
 #if USEMULTVCO2
-          if(PFDRFout==10) {PFDRFout=25;MULTVCO2=0;} //read REF and swap to 10 MHz if it was 25 and to 25 if it was 10
-          else if ( PFDRFout==25){PFDRFout=26;MULTVCO2=0;}
-          else if ( PFDRFout==26){PFDRFout=10;MULTVCO2=1;}
+          if(PFDRFout==10) {PFDRFout=26;MULTVCO2=0;} //read REF and swap
+          else if ( PFDRFout==26){PFDRFout=25;MULTVCO2=0;}
+          else if ( PFDRFout==25){PFDRFout=20;MULTVCO2=0;}
+          else if ( PFDRFout==20){PFDRFout=10;MULTVCO2=1;}
 #else
-          if(PFDRFout==10) {PFDRFout=25;} //read REF and swap to 10 MHz if it was 25 and to 25 if it was 10
-          else if ( PFDRFout==25){PFDRFout=26;}
-          else if ( PFDRFout==26){PFDRFout=10;}
+          if(PFDRFout==10) {PFDRFout=26;} //read REF and swap
+          else if ( PFDRFout==26){PFDRFout=25;}
+          else if ( PFDRFout==25){PFDRFout=20;}
+          else if ( PFDRFout==20){PFDRFout=10;}
 #endif
-          else PFDRFout=OnboardOsc;// In the case of PFDRF being different from 10, 25 or 26
+          else PFDRFout=OnboardOsc;// In the case of PFDRF being different from 10, 20, 25 or 26
           // Recalc VCO_BAND_DIV
           VCO_BAND_DIV = (((PFDRFout << MULTVCO2) * 10 + 23)/24);
           registers[9] = (registers[9] & 0xFFFFFF) + (VCO_BAND_DIV << 24);
@@ -1610,11 +1490,13 @@ void loop()
         if (poscursor==15)
         { 
 #if USEMULTVCO2
-          if( PFDRFout==10){PFDRFout=25;MULTVCO2=0;} //swap REF from 10 to 25 or 25 to 10 with down button
+          if( PFDRFout==10){PFDRFout=20;MULTVCO2=0;} //swap REF from 10 to 25 or 25 to 10 with down button
+          else if ( PFDRFout==20){PFDRFout=25;MULTVCO2=0;}
           else if ( PFDRFout==25){PFDRFout=26;MULTVCO2=0;}
           else if ( PFDRFout==26){PFDRFout=10;MULTVCO2=1;} // 10 MHz
 #else
-          if(PFDRFout==10) {PFDRFout=25;} //read REF and swap to 10 MHz if it was 25 and to 25 if it was 10
+          if(PFDRFout==10) {PFDRFout=20;} //read REF and swap
+          else if ( PFDRFout==20){PFDRFout=25;}
           else if ( PFDRFout==25){PFDRFout=26;}
           else if ( PFDRFout==26){PFDRFout=10;}
 #endif
@@ -1643,14 +1525,6 @@ void loop()
         delay(1); timer2++;        // timer inc all of 1 milliseconds
         if (timer2 > 600) 
         { //waiting 600 milliseconds
-#if 0  // Allow switching of algorithms on the fly
-          if (line==0)
-          {
-            useF1CJNmethod = !useF1CJNmethod;
-            modif = 1;
-          }
-          else
-#endif
           if (WEE==1 || poscursor==15)
           { 
             if (line==1 && poscursor==15)
