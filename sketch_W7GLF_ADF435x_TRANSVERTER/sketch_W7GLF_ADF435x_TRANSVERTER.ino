@@ -28,10 +28,10 @@
 #define ADF4351 false   // Are we ADF4350 or ADF4351 ?
 
 //  DEBUG enables the serial print
-#define DEBUG true
+#define DEBUG false
 
 // Set desired default REF_FREQ to 10 MHz or 25 MHz
-#define DEFAULT_REF_FREQ 10
+#define DEFAULT_REF_FREQ 25
 
 // Set desired default level (0 to 3)
 #define DEFAULT_LEVEL 0
@@ -62,10 +62,11 @@ double frequency_table [32] =
                0.00,  // 13 - 
                0.00,  // 14 - 
                0.00,  // 15 - 
-               144.2, // 16 - For testing 
+             144.20,  // 16 - For testing 
                0.00,  // 17 - 
                0.00,  // 18 - 
                0.00,  // 19 - 
+               0.00,  // 20 -
                0.00,  // 21 - 
                0.00,  // 22 - 
                0.00,  // 23 - 
@@ -80,7 +81,7 @@ double frequency_table [32] =
           };
 //
 //  This sketch uses and Arduino Nano ($2) and an ADF435x chinese
-//  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.             0.00,  // 20 - 
+//  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.
  
 //  Thirty two frequencies can be selected using pins D8 (most significant bit) through D4 (least significant bit).
 //  The bit is considered one if the pin is low and zero if the pin is high.  This means if nothing is connected
@@ -316,7 +317,17 @@ void loop()
   freq_select |= (digitalRead (5) == 0) << 1;
   freq_select |= (digitalRead (4) == 0);
 
-  RFint = frequency_table [freq_select] * 100;  // Convert MHz to tens of KHz.
+  RFint = frequency_table [freq_select] * 100.0 + .5;  // Convert MHz to tens of KHz.
+                                                       // Add .5 to handle any roundoff
+
+#if DEBUG    
+      Serial.print ("freq_table = ");
+      Serial.print (frequency_table [freq_select]);
+      Serial.print ("\n");
+      Serial.print ("RFint = ");
+      Serial.print (RFint);
+      Serial.print ("\n");
+#endif  
   
   if (RFint > 440000) RFint = RFintold;
   
