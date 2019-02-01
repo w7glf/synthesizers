@@ -5,6 +5,7 @@
 //  Lots of changes by Ray Cannon W7GLF
 //   Update July 17, 2018 (Remove INTDIV - it does not work)
 //   Update Aug 26, 2018 (Allow users to redefine DAT and CLK pins basically get rid of SPI_LIB)
+//   Update Feb 2, 2019 (Fix round off error)
 //
 
 // Warning pins D2 through D9 are reserved for the following use
@@ -31,7 +32,7 @@
 #define DEBUG false
 
 // Set desired default REF_FREQ to 10 MHz or 25 MHz
-#define DEFAULT_REF_FREQ 25
+#define DEFAULT_REF_FREQ 10
 
 // Set desired default level (0 to 3)
 #define DEFAULT_LEVEL 0
