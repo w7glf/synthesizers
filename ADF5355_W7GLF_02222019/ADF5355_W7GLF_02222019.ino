@@ -1,112 +1,134 @@
 //   ADF5355 and Arduino
 //
-//   By Alain Fort F1CJN and Dave Brink (for 64bits routines)jan 3,2018
+//   Based on code by Alain Fort F1CJN and Dave Brink (for 64bits routines) jan 3,2018
+//
 //   Port F1CJN code to DUE
 //
 //   This code is freeware. No warranty or liability, expressed or implied, is included with this sketch. Commercial use is prohibited. 
 //
-//   update December  5, 2017 W7GLF Modified DFRobot shield so buttons are referenced to 3.3 volts not 5 volts.  It was causing SELECT button
-//                            to not be recognized.  In any case putting 5 volts on a 3.3 volt Arduino is dangerous.  See comment below under HARDWARE...
-//   update December  6, 2017 W7GLF restructured EEPROM layout to get rid of "magic" numbers like 500 and 501. 
-//                            W7GLF also fixed what looked like a problem waiting for button release - 
-//                            and added the ability to set and save the LEVEL. 
-//   update December  6, 2017 W7GLF Added DEBUG_SETTLE options to allow viewing key press outputs.  
-//   update December 22, 2017 W7GLF Added routine UPDATE_ADF5355 to solve problem with synth losing LOCK when UP/DOWN buttons pressed.  
-//   update December 22, 2017 W7GLF Made some changes to get synth to lock up upon inital power up.  
-//                            I also made Arduino DUE change to add 10K resistor across FET T3 as mentioned by Dan at:
-//                            https://forum.arduino.cc/index.php?topic=256771.30
+//   update December  5, 2017  W7GLF Modified DFRobot shield so buttons are referenced to 3.3 volts not 5 volts.  It was causing SELECT button
+//                             to not be recognized.  In any case putting 5 volts on a 3.3 volt Arduino is dangerous.  See comment below under HARDWARE...
+//   update December  6, 2017  W7GLF restructured EEPROM layout to get rid of "magic" numbers like 500 and 501. 
+//                             W7GLF also fixed what looked like a problem waiting for button release - 
+//                             and added the ability to set and save the LEVEL. 
+//   update December  6, 2017  W7GLF Added DEBUG_SETTLE options to allow viewing key press outputs.  
+//   update December 22, 2017  W7GLF Added routine UPDATE_ADF5355 to solve problem with synth losing LOCK when UP/DOWN buttons pressed.  
+//   update December 22, 2017  W7GLF Made some changes to get synth to lock up upon inital power up.  
+//                             I also made Arduino DUE change to add 10K resistor across FET T3 as mentioned by Dan at:
+//                             https://forum.arduino.cc/index.php?topic=256771.30
 //   update February  8, 2018  W7GLF Allow use of matrixed digital keyboard.  
 //   update February 17, 2018  W7GLF - Add alternative calculation of MOD2 as per ADF5355 spec.  
 //   update February 19, 2018  W7GLF - Allow 10 MHZ to use REF double to reduce phase noise.  
 //   update March     3, 2018  W7GLF - Change longs and long longs to uint32_t and uint64_t.  
 //   update August   21, 2018  W7GLF - Add ability to use analog pins as digital pins for buttons for KD7TS.
 //   update February 21, 2019  W7GLF - Fix bug when using UNO/NANO concerning register 9.
+//   update February 22, 2019  W7GLF - Fix warnings when compiling on Linux.
 //
-//  This sketch uses an Arduino Due, a standard "LCD buttons shield" from ROBOT, with buttons and an ADF5355 Chinese
-//  eval board found at EBAY. The frequency can be programmed between 54 MHz and 13.6 GHz.  
-//  It also requires an external I2C EEPROM (32K x 8 bits). 
-//  The one I used was an AT24C256C mounted on a small board.  These are available on eBay from China. 
+//  This sketch supports an Arduino NANO, UNO or DUE, a standard "LCD buttons shield" from ROBOT, with buttons and the ADF5355 Chinese
+//  eval board found at EBAY. The frequency can be programmed between 54 MHz and 13.6 GHz.
+//  
+//  Note:  the DUE requires an external I2C EEPROM (32K x 8 bits).  The one I used was an AT24C256C mounted on a small board.
+//  These are available on eBay from China. 
 //
-//  I have modified the code so it will also run on an UNO - see #if DUE below...
-//  Be aware if the code is on the UNO then divider resistors for MOSI, SCK, and LE are required to convert the UNO's 5 volt
-//  output levels down to the 3.3 volt level for the ADF5355.  
+//  The code so it will also run on an NANO/UNO - see #if DUE below...
+//
+//  Note: Be aware if the code is on the NANO or UNO then divider resistors for MOSI, SCK, and LE are required to convert the 
+//  the NANO/UNO's 5 volt output levels down to the 3.3 volt level required for the ADF5355.  You can do this using either 
+//  1K and 1.5K or 2K and 3K resistors.  The important thing is the resistors are in a rato to drop 5 volts to about 3.3 volts.
+//
+//  General description:
 //
 //  If one or more frequencies are stored, then at power on, memory zero is always selected.
 //
-//   The cursor moves with the LEFT and RIGHT buttons. Then the underlined digit can be modified with the UP and DOWN buttons, 
-//    for the frequency, the memories and the frequency reference (10 or 25 MHz):
+//  The cursor moves with the LEFT and RIGHT buttons. Then the underlined digit can be modified with the UP and DOWN buttons, 
+//    for the frequency, the memories and the frequency reference (10, 25 or 26 MHz):
 //   - to change the frequency, move the cursor to the digit to be modified, then use the UP and DOWN buttons,
 //   - to modify the memory number,move the cursor to the number to be modified, then use the UP and DOWN buttons,
-//   - to select the refrence frequence, move the cursor on 10 or 25 and select with UP and DOWN.
-//   - to read or write the frequency in memory, place the cursor on the more left/more down position and select REE (for Reading EEprom)
-//    or WEE (for Writing EEprom).
-//    The cursor dissapears after few seconds and is re activated if a button is pressed.
+//   - to select the reference frequence, move the cursor on lower right hand corner 10/25/26 and select with UP and DOWN.
+//   - to read or write the frequency in memory, place the cursor on the lower left position and select REE (for Reading EEprom)
+//    or WEE (for Writing EEprom) with UP/DOWN.
+//
+//    Note:  The cursor dissapears after 10 seconds and is re activated if a button is pressed.
 //
 //   STORING FREQUENCY AND REFERENCE VALUES 
 //    - For the frequency, select WEE, then select the memory number, then push the SELECT button for a second. The word SAVED 
-//    appears on the screen. This memorization works then the cursor is anywhere except on the reference 10 or 25 position.
-//    - For the reference frequency, move the cursor to 10 or 25, the press SELECT for one second. 
+//      appears on the screen. This memorization works then the cursor is anywhere except on the reference 10 or 25 position.
+//    - For the reference frequency, move the cursor to 10 or 25, the press SELECT for one second.  Once the reference is SAVED
+//      it will be remembered on the next power up until it is manually changed.
 //
-//  ******************************************** HARDWARE IMPORTANT********************************************************
-//  With an Arduino Due, resistive dividers on MOSI, SCK, and LE are not required since the Due uses 3.3V logic.
-//  Note that the SCK, DATA outputs and ground connect to the SPI bus connector pins as opposed to side pins 11 and 13 for the Uno.
-//  Connect ADF5355 DATA to pin 4 (MOSI), ADF CLK to pin 3 (SCK), and GROUND to pin 6 (GND). 
-//  Pin 3 is still used for the LE output to the ADF5355 and pin 2 (for lock detection) remains connected to the ADF5355 card MUXOUT.
-//  The ADF5355 card is powered by at least 7 VDC from an external power supply or via the V.IN Arduino pin.
+//  ******************************************** HARDWARE IMPORTANT ********************************************************
 //
-//  The external EEPROM has 4 lines: VCC, GND, SCL, and SDA.  SCL connects to pin 21 (SCL) and SDA connects to pin 20 (SDA)
-//  on the Due.  Connect VCC to 3.3V on button shield (adjacent to 5V pin).
+// ************************************************ DUE INFORMATION ********************************************************
+// *
+// * With the Arduino DUE, resistive dividers on MOSI, SCK, and LE are not required since the DUE uses 3.3V logic.
+// * The SCK, DATA outputs and ground connect to the SPI bus connector pins as opposed to pins 11 and 13 for the NANO/UNO.
+// * Connect ADF5355 DATA to pin 4 (MOSI), ADF CLK to pin 3 (SCK), and GROUND to pin 6 (GND).  If you are looking at the DUE
+// * with the power connector away from you the pins on the SPI connector are numbered as follows:
+// *
+// *   5  3  1
+// *   6  4  2
+// *
+// * Digital pin 3 is used for the LE output to the ADF5355 and digital pin 2 (for lock detection) is connected to ADF5355 card MUXOUT.
+// * The ADF5355 card is powered by at least 7 VDC from an external power supply or via the V.IN Arduino pin.
+// *
+// * The external EEPROM has 4 lines: VCC, GND, SCL, and SDA.  SCL connects to pin 21 (SCL) and SDA connects to pin 20 (SDA)
+// * on the Due.  Connect VCC to 3.3V on button shield (adjacent to 5V pin).
+// *
+// * The 1602 DFRobot shield needs a minor modification so its analog buttons range from 3.3 volts to ground instead of 5 volts
+// * to ground.  Gently pry up LCD and remove 2 K resistor above the gap between the
+// * the RIGHT and RESET buttons.  It is the rightmost resistor when the LCD display is viewed with buttons at the bottom.
+// * Take the removed resistor (or another 2K SMD resistor if you lost the removed resistor) and solder it to the bottom
+// * of the board to the right side of the RIGHT button which you can see is connected to the line from A0.  The other side of
+// * the resistor should be connected with a fine wire to the 3.3 volt pin that is between the RST pin and the 5 volt pin. 
+// *
+// ***************************************************************************************************************************
 //
-//  The 1602 DFRobot shield needs a minor modification so its analog buttons range from 3.3 volts to ground instead of 5 volts
-//  to ground.  Gently pry up LCD and remove 2 K resistor above the gap between the
-//  the RIGHT and RESET buttons.  It is the rightmost resistor when the LCD display is viewed with buttons at the bottom.
-//  Take the removed resistor (or another 2K SMD resistor if you lost the removed resistor) and solder it to the bottom
-//  of the board to the right side of the RIGHT button which you can see is connected to the line from A0.  The other side of
-//  the resistor should be connected with a fine wire to the 3.3 volt pin that is between the RST pin and the 5 volt pin. 
 //
-//  *********************************** Here are comments KD7TS added for his configuration *******************************
-//  *********************************** using a NANO and his button setup - probably not **********************************
-//  *********************************** of interest to others unless copying his setup ************************************
+// ************************************************ NANO/UNO INFORMATION *****************************************************
+// *
+// * NANO/UNO connections to ADF5355 
+// *   With any 5 volt unit: use a resistive divider to reduce the voltage between these pins, 
+// *   MOSI   (pin D11)  to ADF5355 DAT 
+// *   SCK    (pin D13)  to ADF5355 CLK 
+// *   Select (pin D3 )  to ADF5355 LE 
+// *
+// *   D2     (pin D2)   to MUX   around +3.2 when locked, otherwise zero
+// *
+// *   Resistive divider 1000 Ohms in series with 1500 Ohms to ground on Arduino pins 11, 13 and 3 or
+// *   resistive divider 2000 Ohms in series with 3000 Ohms to ground on Arduino pins 11, 13 and 3.
+// *   Connect the junction of the series resistors to MOSI (DAT), SCK (CLK) and Select (LE) on ADF4351.
+// *
+// *   Arduino pin D2 (for lock detection) directly connected to ADF4351 card MUXOUT.
+// *
+// ***************************************************************************************************************************
 //
-
-// 1602 LCD connections to NANO (not a button board/display)
-//
-// LCD pin RS to digital pin D8
-// LCD pin E  to digital pin D9 (enable)
-// LCD pin D4 to digital pin D4
-// LCD pin D5 to digital pin D5
-// LCD pin D6 to digital pin D6
-// LCD pin D7 to digital pin D7
-//
-// LCD R/W pin to ground
-// LCD VSS pin to ground
-// LCD VCC pin to 5V
-// 10K resistor: this (is a pot)
-// ends to +5V and ground
-// wiper to LCD VO pin (pin 3)voltage on VO around 9/10ths of a volt when text is visible.
-//
-//  NANO connections to ADF5355 
-//  With any 5 volt unit: use a resistive divider to reduce the voltage between these pins, 
-//  MOSI   (pin D11) to ADF5355 DAT 
-//  SCK    (pin D13)  to ADF5355 CLK 
-//  Select (pin D3 )  to ADF5355 LE 
-//
-//  D2     (pin D2)  to MUX   around +3.2 when locked, otherwise zero
-//
-//  Resistive divider 560 Ohms in series with 1000 Ohms to ground on Arduino pins 11, 13 and 3 or
-//  resistive divider 1000 Ohms in series with 1500 Ohms to ground on Arduino pins 11, 13 and 3.
-//  Connect the junction of the series resistors to MOSI, SCK and Select on ADF4351 respectively.
-//
-//  Arduino pin D2 (for lock detection) directly connected to ADF4351 card MUXOUT. 4
-//
+// *********************************** Here are comments KD7TS added for his configuration using *************************
+// *********************************** a NANO and discrete buttons setup - probably not **********************************
+// *********************************** of interest to others unless copying his setup ************************************
+// *
+// *  Parallel 1602 LCD connections to NANO/UNO (not using DF Robot button board/display)
+// *
+// *  LCD pin RS to digital pin D8
+// *  LCD pin E  to digital pin D9 (enable)
+// *  LCD pin D4 to digital pin D4
+// *  LCD pin D5 to digital pin D5
+// *  LCD pin D6 to digital pin D6
+// *  LCD pin D7 to digital pin D7
+// *
+// *  LCD R/W pin to ground
+// *  LCD VSS pin to ground
+// *  LCD VCC pin to 5V
+// *  10K resistor: this (is a pot) ends to +5V and ground
+// *  wiper to LCD VO pin (pin 3). Voltage on VO around 9/10ths of a volt when text is visible.
+// *
 //  FREQUENCY SELECT BUTTONS
 //
 //  5 buttons are wired from A0 - A4 to ground through the same 120 ohm resistor. The pins
 //  are assigned as digital inputs with pull up resistors. 
 //
 //************************************************* END OF KD7TS COMMENTS *************************************************
-//
-//************************************************* BUTTON OPERATION*******************************************************
+
+// ************************************************* BUTTON OPERATION*******************************************************
 //Touch LEFT    cursor to the left
 //Touch RIGHT   cursor to the right
 //Touch UP      increase frequency
@@ -115,7 +137,7 @@
 //*************************************************************************************************************************
 // Warning : if you are using a ROBOT Shied version 1.1, it will be necessary to rescale the
 // threshold values in the read_buttons sub routine 
-
+//
 // The correction value can be used to tweak the frequency of the internal oscillator.  Let the synth run for a while
 // and measure the actual frequency on a counter.  The value will be ratio of the measured divided by the expected minus 1
 // times one billion.  Thus if the synth was set for 1,000,000,000 Hz and the counter said 1,000,000,625 Hz then the value
@@ -125,11 +147,11 @@
 // correction = ((Measured/Expected) - 1) * 10^9
 long correction = 0;
 
-char version [17] = "v 01/11/19 18:00";
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)  
+#define __FILENAME_VER__ (strrchr(__FILE__, '_') ? strrchr(__FILE__, '_') + 1 : __FILE__)  
+char version [17];
 
-#define DUE false                                                                                // Use Due otherwise use Uno or Nano
-
-#define USEMULTVCO2 true  // Multiply 10 MHZ external input by 2 to improve phase noise 
+#define DUE false            // true if using DUE otherwise false for UNO or NANO
 
 #define SINGLE_ENDED_LO true // Reference is Single Ended.  Note by default black board uses
                              // differential reference so this would be false.  Green board
@@ -137,16 +159,19 @@ char version [17] = "v 01/11/19 18:00";
 
 // Only one of the three following conditions should be set to true
 
-#define ANALOG_BUTTONS true   // true for DF Robot button shield
-#define DIGITAL_BUTTONS false  // true for individual buttons tied to digital inputs - KD7TS uses this
-#define MATRIXED_BUTTONS false  // true for 4x4 matrix keypad
+#define ANALOG_BUTTONS true    // true for DF Robot button shield
+#define DIGITAL_BUTTONS false  // true for individual buttons tied to analog inputs - KD7TS uses this
+#define MATRIXED_BUTTONS false // true for 4x4 matrix keypad
 
 // W7GLF - added some DEBUG variables.
 
-#define DEBUG true
+#define DEBUG false            // GLOBAL DEBUG
 
 #define DEBUG_BUTTONS false
 #define DEBUG_SETTLE false
+
+// Leave the following as true
+#define USEMULTVCO2 true  // Multiply 10 MHZ external input by 2 to improve phase noise 
 
 // W7GLF - useful macros for dumping out the hex value of a register
 #define DebugSerialPrint(token) \
@@ -198,7 +223,7 @@ char version [17] = "v 01/11/19 18:00";
 
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 
-// W7GLF - EEPROM Layout
+// EEPROM Layout
 #define OnboardOsc 26
 #define MAXMEM 100  // Number of memories that can be saved
 #define PDREF  MAXMEM*9 // 4 bytes for frequency in kHz, 4 for Hertz and 1 for level
@@ -219,13 +244,11 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 byte poscursor = 0; //position cursor common 0 to 15
 byte line = 0; // display line in progress on LCD in the course of 0 to 1
 byte X2 = 0;
-byte MULTVCO2 = 0;  // For 10 MHz we are going to double VCO - it improves phase noise
+uint32_t MULTVCO2 = 0;  // For 10 MHz we are going to double VCO - it improves phase noise
 byte VCO_BAND_DIV;
 unsigned int ADC_CLK_DIV;
 
 // DUE needs external EEPROM which uses 16-bit of address (memory) to address all 32K bytes.
-// We define this as "int" so it will be 32 bits on DUE and 16 bits on UNO which is what
-// EEPROM library routine wants to see. 
 uint16_t memory;
 
 // I found programming synth must be tried harder after a power up.
@@ -235,7 +258,7 @@ uint32_t registers[13] = {0x00200CF0,
                           0x05C28F51, 
                           0xC28FFFF2, 
                           0x00000003, 
-                          0x30008984,  // Change to Single Ended Ref 
+                          0x30008984,  // Defualt is Single Ended Ref 
                           0x00800025, 
                           0x3500A076, 
                           0x120000E7, 
@@ -308,7 +331,7 @@ uint32_t FRAC1R,FRAC2R,INTR,RF_Select,I_BLEED_N,RFB;
 #define btnM10    10
 
 
-// Values for analog buttons, digital buttons or 4x4 MATRIXED KEYBOARD
+// Values for buttons
 #define btnRIGHT  11
 #define btnUP     12
 #define btnDOWN   13
@@ -419,24 +442,6 @@ void div64(uint32_t num[], uint32_t den[]){
    value = value1 / value2;
    num[0] = (value >> 32) & 0xFFFFFFFF;
    num[1] = value & 0xFFFFFFFF;
-   // value1 = num [0]; 
-   // value1 = value1<<32 + num[1];
-   // value1 always ended up as zero... not sure why...
-//   union {
-//       uint64_t full; 
-//       struct {
-//          uint32_t low;
-//          uint32_t high;
-//       }; 
-//   } value, value1, value2;
-//
-//   value1.high = num[0];
-//   value1.low = num[1];
-//   value2.high = den[0];
-//   value2.low = den[1];
-//   value.full = value1.full / value2.full;
-//   num[0] = value.high;
-//   num[1] = value.low;
 #else
    init64(quot,0,0);
    init64(qbit,0,1);
@@ -486,7 +491,7 @@ void mul64(uint32_t an[], uint32_t ann[]){
 //******************************End of 64 bits routines****************************************
 
 // ****************************Print variable f64****************************************
-void DebugSerialPrint64(char *title1, uint32_t  an[], char *title2){
+void DebugSerialPrint64(const char *title1, uint32_t  an[], const char *title2){
 char buffer [21];
 uint64_t value;  // long long is 64 bits
 
@@ -521,7 +526,7 @@ uint64_t value;  // long long is 64 bits
 }
 
 // ****************************Print variable f32****************************************
-void DebugSerialPrint32(char *title1, uint32_t  an, char *title2){
+void DebugSerialPrint32(const char *title1, uint32_t  an, const char *title2){
 
 #if DEBUG
   Serial.print(title1); 
@@ -1055,6 +1060,7 @@ void setCorrection(int32_t calibration = 0)
 
 //************************************ Setup ****************************************
 void setup() {
+  int i;
 
   rflevel = 3; rflevelold = -1;
 
@@ -1091,8 +1097,21 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("F1CJN/AA5C/W7GLF");
   lcd.setCursor(0, 1);
+  strncpy (version, "ver ", sizeof(version));
+  strncpy (&version[4], __FILENAME_VER__, sizeof(version)-4);
+  for (i=strlen(version)-1; i > 0; i--) 
+  {
+    if (version[i] == '\.')
+    { 
+      break;
+    }
+  }
+  while (i < 16)
+  {
+     version [i++] = ' ';
+  }
   lcd.print(version);
-  Serial.print ("ADF5355_W7GLF_02212019.ino\n");
+  Serial.print (__FILENAME__);
   delay(2000);
 
   pinMode(2, INPUT);  // PIN 2 input lock signal
@@ -1584,5 +1603,3 @@ void loop()
    if (locked != (digitalRead(2) == 1)) printLocked();
 
 }   // end loop
-
-
