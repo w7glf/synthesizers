@@ -20,6 +20,7 @@
 //   update February 19, 2018  W7GLF - Allow 10 MHZ to use REF double to reduce phase noise.  
 //   update March     3, 2018  W7GLF - Change longs and long longs to uint32_t and uint64_t.  
 //   update August   21, 2018  W7GLF - Add ability to use analog pins as digital pins for buttons for KD7TS.
+//   update February 21, 2019  W7GLF - Fix bug when using UNO/NANO concerning register 9.
 //
 //  This sketch uses an Arduino Due, a standard "LCD buttons shield" from ROBOT, with buttons and an ADF5355 Chinese
 //  eval board found at EBAY. The frequency can be programmed between 54 MHz and 13.6 GHz.  
@@ -126,7 +127,7 @@ long correction = 0;
 
 char version [17] = "v 01/11/19 18:00";
 
-#define DUE false          // Use Due otherwise use Uno or Nano
+#define DUE false                                                                                // Use Due otherwise use Uno or Nano
 
 #define USEMULTVCO2 true  // Multiply 10 MHZ external input by 2 to improve phase noise 
 
@@ -136,13 +137,13 @@ char version [17] = "v 01/11/19 18:00";
 
 // Only one of the three following conditions should be set to true
 
-#define ANALOG_BUTTONS false  // true for DF Robot button shield
-#define DIGITAL_BUTTONS true  // true for individual buttons tied to digital inputs - KD7TS uses this
+#define ANALOG_BUTTONS true   // true for DF Robot button shield
+#define DIGITAL_BUTTONS false  // true for individual buttons tied to digital inputs - KD7TS uses this
 #define MATRIXED_BUTTONS false  // true for 4x4 matrix keypad
 
 // W7GLF - added some DEBUG variables.
 
-#define DEBUG false
+#define DEBUG true
 
 #define DEBUG_BUTTONS false
 #define DEBUG_SETTLE false
@@ -175,7 +176,9 @@ char version [17] = "v 01/11/19 18:00";
    }
 
 #include <LiquidCrystal.h>
+#if DUE
 #include <Wire.h>            //To use the I2C interface (SDA & SCL) to external EEPROM
+#endif
 #define EEPROM_ADDRESS 0x50  //Base address of chip on the I2C interface
 #include <SPI.h>
 #define ADF5355_LE 3
@@ -196,7 +199,7 @@ char version [17] = "v 01/11/19 18:00";
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
 
 // W7GLF - EEPROM Layout
-#define OnboardOsc 25
+#define OnboardOsc 26
 #define MAXMEM 100  // Number of memories that can be saved
 #define PDREF  MAXMEM*9 // 4 bytes for frequency in kHz, 4 for Hertz and 1 for level
 #define MFREF PDREF+1  // save INUSE REF freq flag at startup
@@ -1056,7 +1059,9 @@ void setup() {
   rflevel = 3; rflevelold = -1;
 
   Serial.begin (115200); //  Serial to the PC via Arduino "Serial Monitor"  at 115200 baud
+#if DUE
   Wire.begin();   // AA5C - needed to start wire function for external EEPROM
+#endif
 
 #if !ANALOG_BUTTONS
   pinMode(row[0], OUTPUT);
@@ -1087,6 +1092,7 @@ void setup() {
   lcd.print("F1CJN/AA5C/W7GLF");
   lcd.setCursor(0, 1);
   lcd.print(version);
+  Serial.print ("ADF5355_W7GLF_02212019.ino\n");
   delay(2000);
 
   pinMode(2, INPUT);  // PIN 2 input lock signal
@@ -1106,7 +1112,7 @@ void setup() {
    }
    // Calc VCO_BAND_DIV
    VCO_BAND_DIV = (((PFDRFout << MULTVCO2) * 10 + 23)/24);
-   registers[9] = (registers[9] & 0x00FFFFFF) + (VCO_BAND_DIV << 24);
+   registers[9] = (registers[9] & 0x00FFFFFF) +  ((uint32_t)VCO_BAND_DIV << 24);
    ADC_CLK_DIV = ((((PFDRFout << MULTVCO2) * 10 - 2) + 3) / 4);
    if (ADC_CLK_DIV > 255) ADC_CLK_DIV = 255;
    registers[10] = (registers[10] & 0xFFFFC03F) + (ADC_CLK_DIV << 6);
@@ -1438,7 +1444,7 @@ void loop()
           else PFDRFout=OnboardOsc;// In the case of PFDRF being different from 10, 20, 25 or 26
           // Recalc VCO_BAND_DIV
           VCO_BAND_DIV = (((PFDRFout << MULTVCO2) * 10 + 23)/24);
-          registers[9] = (registers[9] & 0xFFFFFF) + (VCO_BAND_DIV << 24);
+          registers[9] = (registers[9] & 0xFFFFFF) + ((uint32_t)VCO_BAND_DIV << 24);
           ADC_CLK_DIV = ((((PFDRFout << MULTVCO2) * 10 - 2) + 3) / 4);
           if (ADC_CLK_DIV > 255) ADC_CLK_DIV = 255;
           registers[10] = (registers[10] & 0xFFFFC03F) + (ADC_CLK_DIV << 6);
@@ -1503,7 +1509,7 @@ void loop()
           else PFDRFout=OnboardOsc;// In the case or PFDRF different from 10, 25 or 26
           // Recalc VCO_BAND_DIV
           VCO_BAND_DIV = (((PFDRFout << MULTVCO2) * 10 + 23)/24);
-          registers[9] = (registers[9] & 0xFFFFFF) + (VCO_BAND_DIV << 24);
+          registers[9] = (registers[9] & 0xFFFFFF) + ((uint32_t)VCO_BAND_DIV << 24);
           ADC_CLK_DIV = ((((PFDRFout << MULTVCO2) * 10 - 2) + 3) / 4);
           if (ADC_CLK_DIV > 255) ADC_CLK_DIV = 255;
           registers[10] = (registers[10] & 0xFFFFC03F) + (ADC_CLK_DIV << 6);
