@@ -491,11 +491,10 @@ void mul64(uint32_t an[], uint32_t ann[]){
 //******************************End of 64 bits routines****************************************
 
 // ****************************Print variable f64****************************************
-void DebugSerialPrint64(const char *title1, uint32_t  an[], const char *title2){
-char buffer [21];
-uint64_t value;  // long long is 64 bits
-
+void DebugSerialPrint64(const char *title1, uint32_t an[], const char *title2){
 #if DEBUG
+  char buffer [21];
+
      Serial.print(title1); 
      value = an[0] * 0x100000000L + an[1];
   #if DUE
@@ -748,7 +747,6 @@ int read_buttons()
 //***************************** SP Display Frequency on LCD ********************************
 void printAll ()
 {
-  int PDF;
   char digit[2] = " ";
   uint32_t RFval [2];
   uint32_t NUMERATOR [2];
@@ -1101,7 +1099,7 @@ void setup() {
   strncpy (&version[4], __FILENAME_VER__, sizeof(version)-4);
   for (i=strlen(version)-1; i > 0; i--) 
   {
-    if (version[i] == '\.')
+    if (version[i] == '.')
     { 
       break;
     }
