@@ -491,10 +491,11 @@ void mul64(uint32_t an[], uint32_t ann[]){
 //******************************End of 64 bits routines****************************************
 
 // ****************************Print variable f64****************************************
-void DebugSerialPrint64(const char *title1, uint32_t an[], const char *title2){
-#if DEBUG
-  char buffer [21];
+void DebugSerialPrint64(const char *title1, uint32_t  an[], const char *title2){
+char buffer [21];
+uint64_t value;  // long long is 64 bits
 
+#if DEBUG
      Serial.print(title1); 
      value = an[0] * 0x100000000L + an[1];
   #if DUE
@@ -747,6 +748,7 @@ int read_buttons()
 //***************************** SP Display Frequency on LCD ********************************
 void printAll ()
 {
+  int PDF;
   char digit[2] = " ";
   uint32_t RFval [2];
   uint32_t NUMERATOR [2];
@@ -1166,6 +1168,7 @@ void setup() {
 
   WEE=0;  address=0;
   lcd.blink();
+  timer = 1;
   printAll(); 
   delay(500);
   
