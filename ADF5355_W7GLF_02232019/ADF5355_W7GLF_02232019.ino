@@ -23,6 +23,7 @@
 //   update August   21, 2018  W7GLF - Add ability to use analog pins as digital pins for buttons for KD7TS.
 //   update February 21, 2019  W7GLF - Fix bug when using UNO/NANO concerning register 9.
 //   update February 22, 2019  W7GLF - Fix warnings when compiling on Linux.
+//   update April     1, 2019  W7GLF - Only set INUSE flag if memory 0 is used.
 //
 //  This sketch supports an Arduino NANO, UNO or DUE, a standard "LCD buttons shield" from ROBOT, with buttons and the ADF5355 Chinese
 //  eval board found at EBAY. The frequency can be programmed between 54 MHz and 13.6 GHz.
@@ -492,10 +493,11 @@ void mul64(uint32_t an[], uint32_t ann[]){
 
 // ****************************Print variable f64****************************************
 void DebugSerialPrint64(const char *title1, uint32_t  an[], const char *title2){
-char buffer [21];
-uint64_t value;  // long long is 64 bits
 
 #if DEBUG
+  char buffer [21];
+  uint64_t value;  // long long is 64 bits
+
      Serial.print(title1); 
      value = an[0] * 0x100000000L + an[1];
   #if DUE
@@ -1150,7 +1152,7 @@ void setup() {
 #endif
      
    if (readEEPROM(MFREQ)==INUSE)
-   {  // if a frequency is written in EEPROM
+   {  // if a frequency is written in EEPROM memory 0
      RFint=readEEPROMlong(0);
      HERTZ=readEEPROMlong(4);
      if (HERTZ > 1000 || HERTZ < 0) HERTZ = 0;
@@ -1553,17 +1555,20 @@ void loop()
         { //waiting 600 milliseconds
           if (WEE==1 || poscursor==15)
           { 
-            if (line==1 && poscursor==15)
+            if (line==1 && poscursor==15) // Ref Freq
             { 
               writeEEPROM(PDREF,PFDRFout);
               writeEEPROM(MFREF,INUSE);
             } // write REF and flag
-            else if (WEE==1) 
+            else if (WEE==1) // Memory
             {
               writeEEPROMlong(memory*9,RFint);
               writeEEPROMlong(memory*9+4,HERTZ);
               writeEEPROM(memory*9+8,rflevel);
-              writeEEPROM(MFREQ,INUSE);
+              if (memory == 0)
+              {
+                writeEEPROM(MFREQ,INUSE);
+              }
             }// write RF in EEPROM at address (memory*9)
             // four bytes per RF value
             lcd.setCursor(0,1); lcd.print("    SAVED    ");
