@@ -1113,6 +1113,7 @@ void setup() {
   }
   lcd.print(version);
   Serial.print (__FILENAME__);
+  Serial.print ("\r\n");
   delay(2000);
 
   pinMode(2, INPUT);  // PIN 2 input lock signal
