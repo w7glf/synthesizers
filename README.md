@@ -12,7 +12,7 @@ ADF4351_W7GLF_ver8
   frequency.  It also has the ability to use discrete pushbuttons or a 4x4 matrix to act as the data entry device.
   This is an enhancement of work originally done by F1CJN.  It runs on either an Arduino NANO or an Arduino UNO.
 
-ADF5355_W7GLF_02222019
+ADF5355_W7GLF_06072023
   This file is for using either an ADF5355 for a frequency source.  It uses the DF Robot shield to enter the desired
   frequency.  It also has the ability to use discrete pushbuttons or a 4x4 matrix to act as the data entry device.
   This is an enhancement of work originally done by AA5C and F1CJN.  It allows setting frequency to the Hertz.
