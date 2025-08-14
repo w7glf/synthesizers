@@ -3,7 +3,7 @@
 //   update march 7, 2016 (ROBOT V1.1 and V1.0)
 //
 //  Lots of changes by Ray Cannon W7GLF
-//   Update July 17, 2018 (Remove INTDIV - it does not work)
+//
 //   Update Aug 26, 2018 (Allow users to redefine DAT and CLK pins basically get rid of SPI_LIB)
 //   Update Feb 2, 2019 (Fix round off error)
 //
@@ -26,16 +26,23 @@
 // #define ADF435x_CLK 11 // Pin for CLK on ADF435x
 // #define ADF435x_DAT 12 // Pin for DAT Enable on ADF435x
 
-#define ADF4351 false   // Are we ADF4350 or ADF4351 ?
+//  INTDIV below was used to test the use of INT n division rather than FRAC n division.  
+//  It would be interesting to compare the phase noise using each method.  I have determined INT n 
+//  division does not work for all choices (for example 432.01) because N register is only 16 bits.
+//  When that happens I fall back to FRACT mode and display LOCKED.  
+//
+#define INTDIV  true
+
+#define ADF4351 true   // Are we ADF4350 or ADF4351 ?
 
 //  DEBUG enables the serial print
-#define DEBUG false
+#define DEBUG true
 
 // Set desired default REF_FREQ to 10 MHz or 25 MHz
 #define DEFAULT_REF_FREQ 10
 
 // Set desired default level (0 to 3)
-#define DEFAULT_LEVEL 0
+#define DEFAULT_LEVEL 3
 
 double frequency_table [32] =
   // I made these double so if on board oscillator is too low these can be
@@ -43,10 +50,10 @@ double frequency_table [32] =
   // will not allow you to transmit.  This means that using integer division is
   // likely not possible.  If you lock to GPS then these numbers will end up 
   // being integers and you can use integer divison to improve phase noise.
-
           {
             // The first value is the default value when Arduino has no jumpers. 
-            1136.00,  // 0  - 1136*9 => 10224 + 144.1 => 10368.1
+            2556.00,    // 0  - 2556*4 => 10224 + 144.1 => 10368.1
+//            1136.00,  // 0  - 1136*9 => 10224 + 144.1 => 10368.1
 
             1135.80,  // 1  - 1135.8*9 => 10222.2 + 145.9 => 10368.1
             1104.00,  // 2  - 1104*9 => 9936 + 432 => 10368
@@ -83,7 +90,6 @@ double frequency_table [32] =
 //
 //  This sketch uses and Arduino Nano ($2) and an ADF435x chinese
 //  card found at EBAY ($16). The frequency can be programmed between 137.5 and 4400 MHz.
- 
 //  Thirty two frequencies can be selected using pins D8 (most significant bit) through D4 (least significant bit).
 //  The bit is considered one if the pin is low and zero if the pin is high.  This means if nothing is connected
 //  the Aduino will select frequency zero. This is because of the pullups.
@@ -100,6 +106,8 @@ double frequency_table [32] =
 
 #include <SPI.h>
 #include <avr/sleep.h>
+
+#define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
 
 bool locked, nreg_overflow=false;
 
@@ -125,6 +133,7 @@ unsigned int long reg0, reg1;
 unsigned long nreg, rreg, oldgcd;
 unsigned long freqin, pdfreqin;
 
+
 void WriteRegister32(const uint32_t value)   //program a 32 bit register
 {
   digitalWrite(ADF435x_LE, LOW);
@@ -139,14 +148,20 @@ void WriteRegister32(const uint32_t value)   //program a 32 bit register
 
 void SetADF435x()  // Program all the registers of the ADF435x
 { 
+  char output [10];
+
+  int val;
   for (int i = 5; i >= 0; i--)
   {  // programming ADF435x starting with R5
     WriteRegister32(registers[i]);
 #if DEBUG
     Serial.print ("registers [");   
     Serial.print (i);   
-    Serial.print ("] = ");   
-    Serial.print (registers [i], HEX);
+    Serial.print ("] = ");
+    sprintf (output, "%04X", (registers [i])>>16 & 0xffff);
+    Serial.print (output);
+    sprintf (output, "%04X", (registers [i]) & 0xFFFF);
+    Serial.print (output);
     Serial.print ("\r\n");
 #endif       
   }
@@ -154,6 +169,28 @@ void SetADF435x()  // Program all the registers of the ADF435x
     Serial.flush ();
 #endif       
 }
+
+
+#if INTDIV
+// Calculate Greatest Common Divisor of desired freq and ref which gives us the
+// highest Phase Detection Frequency we can use for integer divisor.
+// Credit for algorithm goes to Euclid.
+long GCD(unsigned long freq, unsigned long ref )
+{
+  while (freq != ref)
+  {
+    if (freq > ref)
+    {
+      freq -= ref;
+    }
+    else
+    {
+      ref -= freq;
+    }
+  }
+  return freq;
+}
+#endif
 
 void CalculateDivider ()
 {
@@ -220,23 +257,79 @@ void FrequencyOrLevelHasChanged()
       registers [4] |= ((level & 3) << 3);
     } 
     
+#if INTDIV
+    // User INTEGER Division
+    // Calculate best integer Phase Detector Frequency
+
+    // Convert frequencies to Hertz
+    freqin = 10000 * RFint * OutputDivider;
+    pdfreqin  = 1000000 * PFDRFout;
+    gcd = GCD(freqin, pdfreqin );
+    nreg = freqin / gcd;
+    rreg = pdfreqin / gcd;
+
+  #if DEBUG    
+    if (gcd != oldgcd) 
+    {
+      Serial.print ("RFint = ");
+      Serial.println (RFint);
+      Serial.print ("OutputDivider = ");
+      Serial.println (OutputDivider);
+      Serial.print ("GCD of ");
+      Serial.print (freqin);
+      Serial.print (" and ");
+      Serial.print (pdfreqin);
+      Serial.print (" is ");
+      Serial.print (gcd);
+      Serial.print (", n = ");
+      Serial.print (nreg);
+      Serial.print (", r = ");
+      Serial.print (rreg);
+      Serial.print ("\n");
+    }
+  #endif 
+
+    if (nreg > 65535 || gcd < 500000) // If Loop freq is below .5 MHz
+    {
+  #if DEBUG
+    if (nreg > 65536)
+      Serial.print ("N too large for INT mode so using FRACT mode\n");
+    if (gcd < 500000)
+      Serial.print ("Loop Comparison frequency < 500 kHz so using FRACT mode\n");
+  #endif
+      nreg_overflow = true;
+      // We cannot use INT so go back to FRACT
+      INTA = (RFout * OutputDivider) / PFDRFout;
+      MOD = (PFDRFout / OutputChannelSpacing);
+      if (MOD < 2) MOD = 2;
+      FRACF = (((RFout * OutputDivider) / PFDRFout) - INTA) * MOD;
+      FRAC = round(FRACF); // The result is rounded
+      registers[2] = 0x4E42;
+      #if ADF4351
+      bitClear (registers[3], 21); // Reset for Fractional Division
+      bitClear (registers[3], 22); // Reset for Fractional Division
+      #endif
+    }
+    else
+    {
+      // No Overflow - we can do INT Division
+      nreg_overflow = false;
+      INTA = nreg;
+      MOD = 2;
+      FRAC = 0; // The result is rounded
+      registers[2] = (( rreg & 0x3ff ) << 14) | 0xF42;  // (0x100) set means use INT Division
+      #if ADF4351
+      bitSet (registers[3], 21); // Set for INT Division
+      bitSet (registers[3], 22); // Set for INT Division
+      #endif
+    } 
+#else //  INTDIV false always use FRACT DIVISION
     INTA = (RFout * OutputDivider) / PFDRFout;
     MOD = (PFDRFout / OutputChannelSpacing);
     if (MOD < 2) MOD = 2;
     FRACF = (((RFout * OutputDivider) / PFDRFout) - INTA) * MOD;
     FRAC = round(FRACF); // The result is rounded
-
-#if DEBUG    
-      Serial.print ("INT = ");
-      Serial.print (INTA);
-      Serial.print ("\nR = 1");
-      Serial.print ("\nPDF = 10 MHz");
-      Serial.print ("\nFRAC = ");
-      Serial.print (FRAC);
-      Serial.print ("\nMOD = ");
-      Serial.print (MOD);
-      Serial.print ("\n");
-#endif 
+#endif // #if INTDIV
 
     registers[0] = 0;
     registers[0] = INTA << 15; // OK
@@ -360,3 +453,4 @@ void loop()
 
 // End loop()
 }   
+
