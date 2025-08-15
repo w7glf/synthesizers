@@ -22,10 +22,6 @@
 #define ADF435x_CLK 13 // Pin for CLK on ADF435x
 #define ADF435x_DAT 11 // Pin for DAT on ADF435x
 
-// #define ADF435x_LE 10 // Pin for Latch Enable on ADF435x
-// #define ADF435x_CLK 11 // Pin for CLK on ADF435x
-// #define ADF435x_DAT 12 // Pin for DAT Enable on ADF435x
-
 //  INTDIV below was used to test the use of INT n division rather than FRAC n division.  
 //  It would be interesting to compare the phase noise using each method.  I have determined INT n 
 //  division does not work for all choices (for example 432.01) because N register is only 16 bits.
@@ -116,6 +112,7 @@ uint32_t registers[6] =  {0x718008, 0x8008029, 0x4E42, 0x4B3, 0x95003C, 0x580005
 int level=DEFAULT_LEVEL, levelold=-1;  // output level is 0 through 3 see ADF435x documentation Register 4
 unsigned int i = 0;
 unsigned long gcd;  // Only used for INT division to hold loop filter frequency
+unsigned long gcd1; // Used for FRAC division to simply FRAC/MOD
 
 double RFout, REFin, INT, PFDRFout, OutputChannelSpacing, FRACF;
 
@@ -170,12 +167,10 @@ void SetADF435x()  // Program all the registers of the ADF435x
 #endif       
 }
 
-
-#if INTDIV
 // Calculate Greatest Common Divisor of desired freq and ref which gives us the
 // highest Phase Detection Frequency we can use for integer divisor.
 // Credit for algorithm goes to Euclid.
-long GCD(unsigned long freq, unsigned long ref )
+unsigned long GCD(unsigned long freq, unsigned long ref )
 {
   while (freq != ref)
   {
@@ -190,7 +185,6 @@ long GCD(unsigned long freq, unsigned long ref )
   }
   return freq;
 }
-#endif
 
 void CalculateDivider ()
 {
@@ -331,6 +325,13 @@ void FrequencyOrLevelHasChanged()
     FRAC = round(FRACF); // The result is rounded
 #endif // #if INTDIV
 
+//  We will simply FRAC/MOD if appropriate
+    if (FRAC > 0)
+    {
+      gcd1 = GCD(FRAC,MOD);
+      FRAC /= gcd1;
+      MOD  /= gcd1;
+    }
     registers[0] = 0;
     registers[0] = INTA << 15; // OK
     FRAC = FRAC << 3;
