@@ -6,7 +6,8 @@
 //
 //   Update Aug 26, 2018 (Allow users to redefine DAT and CLK pins basically get rid of SPI_LIB)
 //   Update Feb 2, 2019 (Fix round off error)
-//
+//   Added DEBUG_INTMODE to allow using D10 to switch betweem FRACT division and INT division on the fly for testing. 
+//   Removed use of D9 for HALT.  Just left HALT macro to force ARDUINO to HALT to potentially reduce RFI.
 
 // Warning pins D2 through D9 are reserved for the following use
 //
@@ -29,10 +30,17 @@
 //
 #define INTDIV  true
 
+#define MAXLOOP 400000  // Maximum loop frequency for Integer division
+
 #define ADF4351 true   // Are we ADF4350 or ADF4351 ?
+
+#define HALT true      // Halt after programming synthesizer to lessen RFI
 
 //  DEBUG enables the serial print
 #define DEBUG true
+
+//  DEBUG_INTDIV enables using pin D10 to switch from INT Mode to Fract Mode for testing.
+#define DEBUG_INTDIV false
 
 // Set desired default REF_FREQ to 10 MHz or 25 MHz
 #define DEFAULT_REF_FREQ 10
@@ -106,6 +114,7 @@ double frequency_table [32] =
 #define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
 
 bool locked, nreg_overflow=false;
+bool intdiv_old=false;
 
 uint32_t registers[6] =  {0x718008, 0x8008029, 0x4E42, 0x4B3, 0x95003C, 0x580005} ; // 1136 MHz with ref 10 MHz
 
@@ -283,13 +292,27 @@ void FrequencyOrLevelHasChanged()
     }
   #endif 
 
-    if (nreg > 65535 || gcd < 500000) // If Loop freq is below .5 MHz
+#if DEBUG_INTDIV
+    if (nreg > 65535 || gcd < MAXLOOP || (digitalRead (10) == HIGH)) // If Loop freq is below MAXLOOP Hz
+#else
+    if (nreg > 65535 || gcd < MAXLOOP) // If Loop freq is below MAXLOOP Hz
+#endif
     {
   #if DEBUG
-    if (nreg > 65536)
-      Serial.print ("N too large for INT mode so using FRACT mode\n");
-    if (gcd < 500000)
-      Serial.print ("Loop Comparison frequency < 500 kHz so using FRACT mode\n");
+      if (nreg > 65536)
+        Serial.print ("N too large for INT mode so using FRACT mode\n");
+      else if (gcd < MAXLOOP)
+      {
+        Serial.print ("Loop Comparison frequency < ");
+        Serial.print (MAXLOOP/1000);
+        Serial.print ("kHz so using FRACT mode\n");
+      }
+    #if DEBUG_INTDIV
+      else if (digitalRead (10) == HIGH)
+      {
+        Serial.print ("D10 HIGH mode so using FRACT mode\n");
+      }
+    #endif
   #endif
       nreg_overflow = true;
       // We cannot use INT so go back to FRACT
@@ -369,13 +392,15 @@ void setup() {
   pinMode(6, INPUT);          // Setup pins
   pinMode(7, INPUT);          // Setup pins
   pinMode(8, INPUT);          // Setup pins
-  pinMode(9, INPUT);          // Setup pins
+  pinMode(9, INPUT);          // Setup pins - used to signal halt - commented out
+  pinMode(10, INPUT);         // Setup pins - use INTMODE
   digitalWrite(4, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(5, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(6, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(7, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(8, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
   digitalWrite(9, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
+  digitalWrite(10, HIGH);     // Turn on the internal pull-up resistor, default state is HIGH
 
   // Default ref
   PFDRFout=DEFAULT_REF_FREQ;
@@ -415,7 +440,7 @@ void loop()
   RFint = frequency_table [freq_select] * 100.0 + .5;  // Convert MHz to tens of KHz.
                                                        // Add .5 to handle any roundoff
 
-#if DEBUG    
+#if false   
       Serial.print ("freq_table = ");
       Serial.print (frequency_table [freq_select]);
       Serial.print ("\n");
@@ -435,10 +460,18 @@ void loop()
     RFintold=RFint;
     levelold=level;
   }
+
+#if DEBUG_INTDIV
+  if ( digitalRead (10) != intdiv_old )
+  {
+    intdiv_old = !intdiv_old;
+    FrequencyOrLevelHasChanged();
+  }
+#endif
    
   delay (10);
 
-  if (digitalRead (9) == HIGH)
+  if ( HALT )
   {
      // When we have programmed the synth HALT the processor to reduce 
      // switching transients and power draw.  This means that if the frequency
