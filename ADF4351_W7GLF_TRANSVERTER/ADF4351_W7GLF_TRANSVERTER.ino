@@ -110,8 +110,6 @@ double frequency_table [32] =
 #include <SPI.h>
 #include <avr/sleep.h>
 
-#define ADF435x_LE 3 // Pin for Latch Enable on ADF435x
-
 bool locked, nreg_overflow=false;
 bool intdiv_old=false;
 
